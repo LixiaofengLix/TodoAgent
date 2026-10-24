@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TodoAgent 项目代码关系图谱 (多粒度可交互)</title>
+<!-- D3.js v7 CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  :root {
+    --bg-dark: #0b0f19;
+    --bg-panel: #111827;
+    --bg-card: #1f2937;
+    --bg-card-hover: #374151;
+    --border-color: #374151;
+    --border-highlight: #6366f1;
+    --text-main: #f9fafb;
+    --text-muted: #9ca3af;
+    --text-sub: #6b7280;
+    
+    --color-folder: #818cf8;
+    --color-file: #38bdf8;
+    --color-func: #34d399;
+    --color-agent: #f472b6;
+    --color-db: #fbbf24;
+    --color-api: #60a5fa;
+
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* 顶部导航控制条 */
+  header {
+    height: 62px;
+    background: rgba(17, 24, 39, 0.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 20;
+    flex-shrink: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-badge {
+    background: linear-gradient(135deg, #4f46e5, #9333ea);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 9px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+  }
+  .brand h1 {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+  }
+  .brand-desc {
+    font-size: 11px;
+    color: var(--text-sub);
+    margin-left: 4px;
+    border-left: 1px solid #374151;
+    padding-left: 10px;
+  }
+
+  /* 粒度与视图切换控件 */
+  .controls-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .segmented-control {
+    background: #0f172a;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 3px;
+    display: flex;
+    gap: 2px;
+  }
+  .seg-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .seg-btn:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .seg-btn.active {
+    background: #4f46e5;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(79, 70, 229, 0.4);
+  }
+
+  /* 布局切换 */
+  .layout-select {
+    background: #0f172a;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* 搜索框 */
+  .search-box {
+    position: relative;
+    width: 200px;
+  }
+  .search-input {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px 12px 6px 32px;
+    color: var(--text-main);
+    font-size: 12px;
+    outline: none;
+    transition: all 0.2s;
+  }
+  .search-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    width: 240px;
+  }
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-sub);
+    pointer-events: none;
+  }
+  .search-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 50;
+    display: none;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+  }
+  .search-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .search-item:hover {
+    background: var(--bg-card-hover);
+  }
+  .search-item-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* 画布区域 */
+  #viewport {
+    flex: 1;
+    position: relative;
+    width: 100%;
+    height: calc(100vh - 62px);
+    background: radial-gradient(circle at center, #131c31 0%, #0b0f19 100%);
+  }
+
+  svg.graph-svg {
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+  svg.graph-svg:active {
+    cursor: grabbing;
+  }
+
+  /* 语义缩放指示浮窗 */
+  .zoom-indicator {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    background: rgba(17, 24, 39, 0.88);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+    pointer-events: none;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  }
+  .zoom-indicator .level-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .zoom-indicator .zoom-scale-bar {
+    width: 170px;
+    height: 5px;
+    background: #374151;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .zoom-indicator .zoom-scale-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #38bdf8, #34d399);
+    width: 50%;
+    transition: width 0.1s ease;
+  }
+  .zoom-indicator .zoom-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  /* 悬浮操作工具栏 */
+  .floating-toolbar {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .tool-btn {
+    background: rgba(17, 24, 39, 0.88);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 0 12px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  .tool-btn:hover {
+    background: #1f2937;
+    border-color: #6366f1;
+    color: #818cf8;
+    transform: translateY(-2px);
+  }
+  .tool-btn.active {
+    background: #4f46e5;
+    color: white;
+    border-color: #6366f1;
+  }
+
+  /* 图例面板 */
+  .legend-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(17, 24, 39, 0.88);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px 16px;
+    z-index: 10;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+  }
+  .legend-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  /* 详情侧边栏 (Inspector Drawer) */
+  .sidebar {
+    position: absolute;
+    top: 0;
+    right: -440px;
+    width: 420px;
+    height: 100%;
+    background: rgba(17, 24, 39, 0.96);
+    backdrop-filter: blur(20px);
+    border-left: 1px solid var(--border-color);
+    box-shadow: -15px 0 35px rgba(0, 0, 0, 0.6);
+    z-index: 30;
+    transition: right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar.open {
+    right: 0;
+  }
+  .sidebar-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sidebar-header h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+  .close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .close-btn:hover {
+    color: var(--text-main);
+    background: var(--bg-card);
+  }
+  .sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    user-select: text;
+  }
+
+  .info-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 6px;
+    width: fit-content;
+  }
+  .node-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .node-main-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    word-break: break-all;
+  }
+  .node-sub-path {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #818cf8;
+  }
+
+  .info-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .info-section h3 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+  .info-section p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #e5e7eb;
+  }
+
+  .code-snippet {
+    background: #090d16;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: #a5b4fc;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .rel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .rel-item {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .rel-item:hover {
+    border-color: #6366f1;
+    background: #1e1b4b;
+  }
+  .rel-name {
+    font-family: var(--font-mono);
+    color: var(--text-main);
+  }
+  .rel-type {
+    font-size: 10px;
+    color: var(--text-sub);
+  }
+
+  /* SVG 内部节点与连线样式 */
+  .cluster-hull {
+    fill-opacity: 0.05;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    transition: all 0.3s;
+  }
+  .cluster-label {
+    font-size: 12px;
+    font-weight: 600;
+    fill: #9ca3af;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+
+  .edge-line {
+    fill: none;
+    stroke: #4b5563;
+    stroke-opacity: 0.5;
+    transition: stroke 0.2s, stroke-width 0.2s, stroke-opacity 0.2s;
+  }
+  .edge-line.highlight {
+    stroke: #818cf8 !important;
+    stroke-opacity: 1 !important;
+    stroke-width: 2.5px !important;
+  }
+  .edge-line.dimmed {
+    stroke-opacity: 0.08 !important;
+  }
+
+  .edge-label {
+    font-size: 9.5px;
+    fill: #9ca3af;
+    text-anchor: middle;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+
+  .node-g {
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.3s;
+  }
+  .node-g.dimmed {
+    opacity: 0.12 !important;
+  }
+  .node-g:hover .node-shape {
+    filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.8));
+  }
+  .node-g.selected .node-shape {
+    stroke: #ffffff !important;
+    stroke-width: 3.5px !important;
+    filter: drop-shadow(0 0 18px #6366f1);
+  }
+
+  .node-text {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    fill: #ffffff;
+    pointer-events: none;
+    font-weight: 600;
+  }
+  .node-subtext {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    fill: var(--text-muted);
+    pointer-events: none;
+  }
+
+  /* 流动光粒子动画 */
+  @keyframes flowParticle {
+    0% { offset-distance: 0%; opacity: 0; }
+    20% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+
+  /* 自定义滚动条 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+</style>
+</head>
+<body>
+
+  <!-- 顶部导航栏 -->
+  <header>
+    <div class="brand">
+      <span class="brand-badge">TodoAgent</span>
+      <h1>代码全景关系图谱</h1>
+      <span class="brand-desc">多粒度架构与调用全景</span>
+    </div>
+
+    <!-- 粒度切换控制器 -->
+    <div class="controls-group">
+      <div class="segmented-control" id="granularity-control">
+        <button class="seg-btn" data-level="folder" title="缩放到宏观文件夹模块 (Scale < 0.75x)">📁 文件夹层级</button>
+        <button class="seg-btn active" data-level="file" title="缩放到文件依赖网络 (0.75x ~ 1.45x)">📄 文件依赖层级</button>
+        <button class="seg-btn" data-level="function" title="缩放到微观函数/API调用 (Scale >= 1.45x)">⚡ 函数调用层级</button>
+        <button class="seg-btn" data-level="hybrid" title="全景分层嵌套混览">🌐 混合全景透视</button>
+      </div>
+
+      <!-- 布局选择 -->
+      <select class="layout-select" id="layout-select" title="切换排版算法">
+        <option value="force">🌟 智能力导向布局</option>
+        <option value="hierarchical">🌲 分层拓扑流水线</option>
+      </select>
+
+      <!-- 搜索定位框 -->
+      <div class="search-box">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" class="search-input" id="search-input" placeholder="搜索目录 / 文件 / 函数..." autocomplete="off">
+        <div class="search-dropdown" id="search-dropdown"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 图谱画布容器 -->
+  <div id="viewport">
+    <svg class="graph-svg" id="graph-svg">
+      <defs>
+        <!-- 连线箭头定义 -->
+        <marker id="arrow-default" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,-5L10,0L0,5" fill="#4b5563"></path>
+        </marker>
+        <marker id="arrow-highlight" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,-5L10,0L0,5" fill="#818cf8"></path>
+        </marker>
+      </defs>
+      <g id="canvas-layer">
+        <g id="clusters-layer"></g>
+        <g id="edges-layer"></g>
+        <g id="nodes-layer"></g>
+      </g>
+    </svg>
+
+    <!-- 图例 -->
+    <div class="legend-panel">
+      <div style="font-weight: 600; color: #f3f4f6; margin-bottom: 2px;">实体类型图例</div>
+      <div class="legend-item"><span class="legend-color" style="background: #818cf8;"></span> 📁 文件夹 / 模块 (Folder)</div>
+      <div class="legend-item"><span class="legend-color" style="background: #38bdf8;"></span> 📄 源码文件 (File)</div>
+      <div class="legend-item"><span class="legend-color" style="background: #34d399;"></span> ⚡ 函数 / 方法 (Function)</div>
+      <div class="legend-item"><span class="legend-color" style="background: #f472b6;"></span> 🤖 Agent 驱动 (Agent)</div>
+      <div class="legend-item"><span class="legend-color" style="background: #fbbf24;"></span> 🗄️ SQLite 数据库 (DB)</div>
+    </div>
+
+    <!-- 语义缩放指示浮窗 -->
+    <div class="zoom-indicator" id="zoom-indicator">
+      <div class="level-title" id="zoom-level-title">
+        <span>📄 当前粒度：文件依赖层级</span>
+      </div>
+      <div class="zoom-scale-bar">
+        <div class="zoom-scale-fill" id="zoom-scale-fill"></div>
+      </div>
+      <div class="zoom-text" id="zoom-scale-text">Zoom Scale: 1.00x (滚轮自适应)</div>
+    </div>
+
+    <!-- 悬浮操作工具栏 -->
+    <div class="floating-toolbar">
+      <button class="tool-btn" id="btn-reset" title="重置并居中视图">🎯 视野复位</button>
+      <button class="tool-btn" id="btn-zoom-in" title="放大 (+)">➕</button>
+      <button class="tool-btn" id="btn-zoom-out" title="缩小 (-)">➖</button>
+    </div>
+
+    <!-- 详情侧边栏 Inspector -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div id="inspector-badge" class="info-badge" style="background: #312e81; color: #a5b4fc;">
+          FUNCTION NODE
+        </div>
+        <button class="close-btn" id="btn-close-sidebar">✕</button>
+      </div>
+
+      <div class="sidebar-content">
+        <div class="node-title-wrap">
+          <div class="node-main-title" id="inspector-title">node_name</div>
+          <div class="node-sub-path" id="inspector-path">path/to/file.py</div>
+        </div>
+
+        <div class="info-section">
+          <h3>职责定位 / 架构角色</h3>
+          <p id="inspector-desc">这是节点的职责描述...</p>
+        </div>
+
+        <div class="info-section" id="inspector-code-section">
+          <h3>核心代码片段</h3>
+          <div class="code-snippet" id="inspector-code">// Code snippet here</div>
+        </div>
+
+        <div class="info-section">
+          <h3>上游调用方 (Inbound Dependencies)</h3>
+          <div class="rel-list" id="inspector-inbound">
+            <div class="rel-item"><span class="rel-name">main()</span><span class="rel-type">CALL</span></div>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <h3>下游被调用方 (Outbound Dependencies)</h3>
+          <div class="rel-list" id="inspector-outbound">
+            <div class="rel-item"><span class="rel-name">db.create_task()</span><span class="rel-type">CALL</span></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    // 嵌入的完整代码图谱数据
+    const GRAPH_DATA = {"folders": [{"id": "dir_root", "name": "根目录 (Root)", "path": "/", "desc": "项目的启动入口、顶层配置、文档与依赖管理", "color": "#6366f1", "badge": "Entry & Config", "file_count": 4, "metrics": "4 files, ~285 lines", "role": "服务引导与环境装配"}, {"id": "dir_app", "name": "app/ (核心服务包)", "path": "app", "desc": "TodoAgent 核心后端业务：API 路由、数据库访问、Worker 调度与技能管理", "color": "#3b82f6", "badge": "Core Backend", "file_count": 4, "metrics": "4 files, ~741 lines", "role": "任务生命周期与核心业务流"}, {"id": "dir_agents", "name": "app/agents/ (Agent 抽象与驱动)", "path": "app/agents", "desc": "Agent 引擎抽象层、CLI 进程管理及 Cursor Agent 驱动", "color": "#ec4899", "badge": "Agent Engine", "file_count": 3, "metrics": "3 files, ~185 lines", "role": "智能体对话与 CLI 驱动适配"}, {"id": "dir_static", "name": "static/ (前端看板)", "path": "static", "desc": "看板前端 SPA 单页应用，提供任务看板、会话交互与定时任务管理", "color": "#10b981", "badge": "Frontend SPA", "file_count": 1, "metrics": "1 file, ~2042 lines", "role": "交互式用户界面"}], "folder_links": [{"source": "dir_root", "target": "dir_app", "label": "启动与装载", "desc": "main.py 导入 app 模块初始化 DB、API、Worker"}, {"source": "dir_root", "target": "dir_static", "label": "静态挂载", "desc": "通过 FastAPI 将 static 静态文件作为前端看板提供服务"}, {"source": "dir_app", "target": "dir_agents", "label": "驱动调用", "desc": "worker 与 api 模块调用 agents 包驱动智能体执行"}, {"source": "dir_static", "target": "dir_app", "label": "REST API 通信", "desc": "前端通过 fetch 请求 /api 路由进行任务管理与会话流式交互"}], "files": [{"id": "file_main", "name": "main.py", "folder": "dir_root", "path": "main.py", "type": "py", "lines": 46, "color": "#6366f1", "desc": "主程序入口：解析命令行参数、加载 YAML 配置、初始化 SQLite 和 Skills、创建 Agent 驱动、启动 Worker 线程与 Uvicorn HTTP 服务器。", "responsibilities": ["CLI 参数解析 (-c / --agent)", "配置装配与日志设置", "数据库与技能模块初始化", "后台 Worker 启动", "Uvicorn Web 服务托管"]}, {"id": "file_config", "name": "config.yaml", "folder": "dir_root", "path": "config.yaml", "type": "yaml", "lines": 106, "color": "#8b5cf6", "desc": "全局核心配置：服务监听端口、Token 鉴权、日志级别、数据库路径、Worker 并发与轮询、任务默认参数、Prompt 模板、强约束规则及 Agent CLI 配置。", "responsibilities": ["Server 监听与鉴权", "Worker 轮询与 Prompt 模板", "Task 优先级与工作目录模板", "Review AI 审核配置", "Agent CLI (cursor) 参数"]}, {"id": "file_pyproject", "name": "pyproject.toml", "folder": "dir_root", "path": "pyproject.toml", "type": "toml", "lines": 10, "color": "#8b5cf6", "desc": "PEP 621 项目元数据与依赖定义，声明了 FastAPI、Uvicorn、PyYAML、python-multipart 等核心包。", "responsibilities": ["项目元数据", "Python 版本要求 (>=3.9)", "核心依赖清单"]}, {"id": "file_readme", "name": "README.md", "folder": "dir_root", "path": "README.md", "type": "md", "lines": 123, "color": "#8b5cf6", "desc": "项目架构设计、启动运行指南、任务状态机流转、定时任务机制、Skills 体系与 REST API 接口文档。", "responsibilities": ["系统架构概述", "使用说明与状态机规则", "API 接口参考"]}, {"id": "file_api", "name": "app/api.py", "folder": "dir_app", "path": "app/api.py", "type": "py", "lines": 317, "color": "#3b82f6", "desc": "FastAPI Web 路由层：提供任务 CRUD、会话消息、AI 审核、macOS 目录弹窗、文件上传、工作目录 HTML 预览及前端静态挂载。", "responsibilities": ["API Token 鉴权", "任务增删改查与定时派生", "消息发布与排队", "AI 任务审核 (/api/review)", "HTML 预览与安全 Cookie (/preview)"]}, {"id": "file_worker", "name": "app/worker.py", "folder": "dir_app", "path": "app/worker.py", "type": "py", "lines": 116, "color": "#0ea5e9", "desc": "后台异步工作引擎：多线程轮询待办任务、定时任务调度循环、动态组装 Prompt、同步 Skill、调用 Agent 驱动、捕获流式输出与更新会话状态。", "responsibilities": ["多线程 Worker 轮询队列", "定时任务调度循环 (spawn_due)", "Prompt 与约束规则组装", "Agent 执行流与事件监听", "HTML 产物检测与预览链接生成"]}, {"id": "file_db", "name": "app/db.py", "folder": "dir_app", "path": "app/db.py", "type": "py", "lines": 264, "color": "#0284c7", "desc": "SQLite 数据持久层：管理 tasks 和 messages 表、字段自动热迁移、线程锁状态机（todo/doing/waiting/done/failed）、定时任务顺延与派生。", "responsibilities": ["SQLite 自动建表与列迁移", "原子锁线程安全操作", "任务抢占与状态转移", "定时任务计算与派生", "会话历史消息读写"]}, {"id": "file_skills", "name": "app/skills.py", "folder": "dir_app", "path": "app/skills.py", "type": "py", "lines": 44, "color": "#06b6d4", "desc": "Agent 技能管理模块：解析 skills 目录下的 SKILL.md frontmatter，并在任务执行前后自动同步覆盖到工作目录的 .agents/skills。", "responsibilities": ["Skill 元数据解析 (describe)", "工作目录 Skill 安装与同步 (install)"]}, {"id": "file_agents_init", "name": "app/agents/__init__.py", "folder": "dir_agents", "path": "app/agents/__init__.py", "type": "py", "lines": 14, "color": "#ec4899", "desc": "Agent 驱动工厂：维护 AGENTS 注册表，根据配置的 agent.type 动态实例化对应的智能体执行器（如 CursorAgent）。", "responsibilities": ["Agent 驱动注册表", "工厂创建函数 (create_agent)"]}, {"id": "file_agents_base", "name": "app/agents/base.py", "folder": "dir_agents", "path": "app/agents/base.py", "type": "py", "lines": 56, "color": "#f43f5e", "desc": "Agent 抽象基类与通用进程调度：定义 run、ask 接口，实现 stream_cmd 跨平台子进程流式执行、超时控制与异常封装。", "responsibilities": ["Agent 抽象基类", "子进程命令流式监听 (stream_cmd)", "超时与错误管理 (AgentError)"]}, {"id": "file_agents_cursor", "name": "app/agents/cursor.py", "folder": "dir_agents", "path": "app/agents/cursor.py", "type": "py", "lines": 115, "color": "#d946ef", "desc": "Cursor CLI 智能体实现：包装 cursor-agent 命令，解析 stream-json 流事件（thinking、tool_call、assistant、result），支撑会话持久化与问答。", "responsibilities": ["cursor-agent CLI 参数装配", "Stream JSON 协议解析", "思考过程与工具调用事件回调", "只读问答 (ask) 模式支持"]}, {"id": "file_static_index", "name": "static/index.html", "folder": "dir_static", "path": "static/index.html", "type": "html", "lines": 2042, "color": "#10b981", "desc": "看板前端 SPA：采用纯原生 JS/CSS 实现无构建看板，包含拖拽排序、实时长轮询、Markdown 渲染、AI 审核对话、文件拖拽与定时任务面板。", "responsibilities": ["任务看板视图与卡片拖拽", "实时对话与进度日志展示", "AI 任务审核与描述一键采用", "macOS 系统目录选取对接", "HTML 产物 iframe 预览"]}], "file_links": [{"source": "file_main", "target": "file_config", "label": "读取配置", "type": "config"}, {"source": "file_main", "target": "file_db", "label": "db.init()", "type": "call"}, {"source": "file_main", "target": "file_skills", "label": "skills.init()", "type": "call"}, {"source": "file_main", "target": "file_agents_init", "label": "create_agent()", "type": "call"}, {"source": "file_main", "target": "file_worker", "label": "worker.start()", "type": "call"}, {"source": "file_main", "target": "file_api", "label": "create_app()", "type": "call"}, {"source": "file_worker", "target": "file_db", "label": "claim / status / msg", "type": "call"}, {"source": "file_worker", "target": "file_skills", "label": "skills.install()", "type": "call"}, {"source": "file_worker", "target": "file_agents_base", "label": "agent.run()", "type": "call"}, {"source": "file_api", "target": "file_db", "label": "CRUD / messages", "type": "call"}, {"source": "file_api", "target": "file_skills", "label": "skills.describe()", "type": "call"}, {"source": "file_api", "target": "file_agents_base", "label": "agent.ask()", "type": "call"}, {"source": "file_api", "target": "file_static_index", "label": "托管前端看板", "type": "serve"}, {"source": "file_agents_init", "target": "file_agents_cursor", "label": "注册 CursorAgent", "type": "import"}, {"source": "file_agents_init", "target": "file_agents_base", "label": "基类引用", "type": "import"}, {"source": "file_agents_cursor", "target": "file_agents_base", "label": "继承 Agent 基类", "type": "inherit"}, {"source": "file_static_index", "target": "file_api", "label": "REST API 请求", "type": "network"}], "functions": [{"id": "fn_main", "name": "main()", "file": "file_main", "kind": "function", "line": "12-42", "desc": "系统主引导入口：解析命令行参数，读取 yaml 配置，初始化 DB/Skills，创建 Agent，启动后台线程与 Web 宿主。", "code": "def main():\n    # 解析 CLI 参数并读取 yaml\n    db.init(cfg[\"database\"])\n    skills.init(cfg.get(\"skills\") or {})\n    agent = create_agent(cfg[\"agent\"])\n    if cfg[\"worker\"].get(\"enabled\", True):\n        worker.start(cfg[\"worker\"], agent)\n    uvicorn.run(create_app(cfg, agent), ...)"}, {"id": "fn_worker_start", "name": "worker.start()", "file": "file_worker", "kind": "function", "line": "15-18", "desc": "启动 worker 并发工作线程（_loop）与定时任务调度守护线程（_schedule_loop）。", "code": "def start(cfg: dict, agent: Agent) -> None:\n    for i in range(cfg.get(\"concurrency\", 1)):\n        threading.Thread(target=_loop, args=(cfg, agent), daemon=True).start()\n    threading.Thread(target=_schedule_loop, args=(cfg,), daemon=True).start()"}, {"id": "fn_worker_schedule_loop", "name": "worker._schedule_loop()", "file": "file_worker", "kind": "function", "line": "21-29", "desc": "后台定时轮询循环：定期触发 db.spawn_due() 为到期的周期/单次定时任务派生实际执行任务。", "code": "def _schedule_loop(cfg: dict) -> None:\n    while True:\n        for child in db.spawn_due():\n            log.info(\"scheduled task %s spawned #%s\", child[\"parent_id\"], child[\"id\"])\n        time.sleep(cfg.get(\"poll_interval\", 3))"}, {"id": "fn_worker_loop", "name": "worker._loop()", "file": "file_worker", "kind": "function", "line": "32-38", "desc": "Worker 工作循环：不断从数据库原子抢占下一个待办任务 (claim_next)，若有则交由 _run 执行。", "code": "def _loop(cfg: dict, agent: Agent) -> None:\n    while True:\n        task = db.claim_next()\n        if task:\n            _run(cfg, agent, task)\n        else:\n            time.sleep(cfg.get(\"poll_interval\", 3))"}, {"id": "fn_worker_build_prompt", "name": "worker.build_prompt()", "file": "file_worker", "kind": "function", "line": "41-54", "desc": "组装发送给 Agent 的 Prompt：包含首轮任务模板、追加的用户消息、强约束规则（简体中文、HTML路径、NEED_INPUT标记等）。", "code": "def build_prompt(cfg: dict, task: dict, pending: list) -> str:\n    if not task[\"session_id\"]:\n        parts.append(cfg.get(\"prompt_template\").format(**task))\n    if pending:\n        parts.append(cfg.get(\"followup_template\").format(messages=...))\n    if cfg.get(\"rules\"):\n        parts.append(cfg[\"rules\"].format(question_marker=...))\n    return '\\n\\n'.join(parts)"}, {"id": "fn_worker_html_links", "name": "worker.html_links()", "file": "file_worker", "kind": "function", "line": "60-70", "desc": "正则扫描 Agent 回复中提及的 HTML 文件，若存在于工作目录内则自动拼接为可直接点击的 Web 预览链接。", "code": "def html_links(base_url: str, task_id: int, workspace: str, reply: str) -> list:\n    for p in dict.fromkeys(_HTML_RE.findall(reply)):\n        if path.is_file() and path.is_relative_to(root):\n            links.append(f\"- [{rel}]({base_url}/preview/{task_id}/{quote(rel)})\")\n    return list(dict.fromkeys(links))"}, {"id": "fn_worker_run", "name": "worker._run()", "file": "file_worker", "kind": "function", "line": "78-116", "desc": "执行单次任务全流程：装载未读消息、同步 skills、调用 agent.run 驱动执行、监听流式进度并更新状态、最终捕获 HTML 产物并完成会话。", "code": "def _run(cfg: dict, agent: Agent, task: dict) -> None:\n    skills.install(workspace)\n    reply = agent.run(prompt, workspace, task[\"session_id\"], on_event)\n    status = \"waiting\" if marker in reply else \"done\"\n    links = html_links(cfg[\"base_url\"], tid, workspace, reply)\n    db.finish_run(tid, status, reply)"}, {"id": "fn_db_init", "name": "db.init()", "file": "file_db", "kind": "function", "line": "52-83", "desc": "初始化 SQLite 数据库：自动建表 (tasks/messages)、比对 schema 进行热加列 (ALTER TABLE)、重置重启中断任务状态为 failed。", "code": "def init(path: str) -> None:\n    c.execute(\"CREATE TABLE IF NOT EXISTS tasks ...\")\n    c.execute(\"CREATE TABLE IF NOT EXISTS messages ...\")\n    c.execute(\"UPDATE tasks SET status='failed' WHERE status='doing'\")"}, {"id": "fn_db_create_task", "name": "db.create_task()", "file": "file_db", "kind": "function", "line": "130-143", "desc": "在事务内创建新任务并自动分配默认工作目录，返回新建任务字典。", "code": "def create_task(fields: dict, default_workspace: Callable) -> dict:\n    fields = _encode(fields)\n    cur = c.execute(f\"INSERT INTO tasks ...\")\n    if not fields.get(\"workspace\"):\n        c.execute(\"UPDATE tasks SET workspace=? WHERE id=?\", ...)\n    return get_task(cur.lastrowid)"}, {"id": "fn_db_update_task", "name": "db.update_task()", "file": "file_db", "kind": "function", "line": "146-155", "desc": "更新任务字段、重置归档标记（非 done 自动取消归档）、记录 updated_at。", "code": "def update_task(task_id: int, **fields) -> Optional[dict]:\n    if fields.get(\"status\") not in (None, \"done\"):\n        fields[\"archived\"] = 0\n    c.execute(f\"UPDATE tasks SET {sets} WHERE id=?\", ...)"}, {"id": "fn_db_claim_next", "name": "db.claim_next()", "file": "file_db", "kind": "function", "line": "171-181", "desc": "线程锁原子领取待办任务：按优先级降序、创建时间升序抢占一个到期的 todo 任务，并原子置为 doing。", "code": "def claim_next() -> Optional[dict]:\n    with _lock, _conn() as c:\n        row = c.execute(\"SELECT id FROM tasks WHERE status='todo' AND repeat='' AND run_at<=? ORDER BY priority DESC, id LIMIT 1\").fetchone()\n        c.execute(\"UPDATE tasks SET status='doing' WHERE id=?\", (row[\"id\"],))\n    return get_task(row[\"id\"])"}, {"id": "fn_db_spawn_due", "name": "db.spawn_due()", "file": "file_db", "kind": "function", "line": "202-215", "desc": "扫描所有到期的活跃定时任务，派生立即执行子任务，单次任务置为停用，周期任务将 run_at 顺延至下一个周期。", "code": "def spawn_due() -> list:\n    due = _load(c, \"WHERE repeat!='' AND active=1 AND run_at<=?\", (now,))\n    for t in due:\n        children.append(spawn_run(t))\n        if t[\"repeat\"] == \"once\": update_task(t[\"id\"], active=0)\n        else: update_task(t[\"id\"], run_at=next_run(...))"}, {"id": "fn_db_spawn_run", "name": "db.spawn_run()", "file": "file_db", "kind": "function", "line": "192-199", "desc": "根据定时任务模板派生一个 source=schedule 的普通执行任务，并在父定时任务会话中记录系统日志。", "code": "def spawn_run(template: dict) -> dict:\n    fields = {k: template[k] for k in (\"description\", \"workspace\", \"priority\", \"tags\")}\n    fields.update(title=f\"{template['title']}（{when}）\", source=\"schedule\", parent_id=template[\"id\"])\n    child = create_task(fields)\n    add_message(template[\"id\"], \"system\", f\"已生成执行任务 #{child['id']}\")\n    return child"}, {"id": "fn_db_post_user_message", "name": "db.post_user_message()", "file": "file_db", "kind": "function", "line": "236-242", "desc": "追加一条用户消息；若 run=True 且任务当前未处于 doing 状态，则将其重新置为 todo 排队执行。", "code": "def post_user_message(task_id: int, content: str, run: bool = True) -> dict:\n    with _lock:\n        msg = add_message(task_id, \"user\", content)\n        if run and get_task(task_id)[\"status\"] != \"doing\":\n            update_task(task_id, status=\"todo\")\n    return msg"}, {"id": "fn_db_finish_run", "name": "db.finish_run()", "file": "file_db", "kind": "function", "line": "253-264", "desc": "结束当前轮次执行：若执行期间有新消息到来则自动转回 todo 重新排队，否则更新状态与结果；失败时支持回退 read_msg_id。", "code": "def finish_run(task_id: int, status: str, result: str, read_msg_id: int = None) -> None:\n    with _lock:\n        if status != \"failed\" and has_new_user_messages:\n            status = \"todo\"\n        update_task(task_id, status=status, result=result, progress=\"\")"}, {"id": "fn_api_create_app", "name": "api.create_app()", "file": "file_api", "kind": "function", "line": "83-317", "desc": "FastAPI 工厂：配置 Token 认证依赖，注册 /api 路由（CRUD、审核、目录选择、文件上传）及 /preview 文件预览与 / 静态首页。", "code": "def create_app(cfg: dict, agent: Agent) -> FastAPI:\n    app = FastAPI(title=\"TodoAgent\")\n    api = APIRouter(prefix=\"/api\", dependencies=[Depends(auth)])\n    # 注册 CRUD, review, pick_dir, files 等路由\n    app.include_router(api)\n    return app"}, {"id": "fn_api_create_task", "name": "api.create_task [POST /api/tasks]", "file": "file_api", "kind": "endpoint", "line": "164-180", "desc": "创建任务接口：清洗输入、初始化定时参数、写入 DB 并预先安装 skills 到工作目录。", "code": "@api.post(\"/tasks\")\ndef create_task(body: TaskCreate):\n    task = db.create_task(clean(fields), default_workspace)\n    skills.install(task[\"workspace\"])\n    return task"}, {"id": "fn_api_update_task", "name": "api.update_task [PATCH /api/tasks/{id}]", "file": "file_api", "kind": "endpoint", "line": "187-199", "desc": "更新任务接口：支持修改字段、归档检查、定时触发时间修正 (fix_schedule) 与派生任务标签同步。", "code": "@api.patch(\"/tasks/{task_id}\")\ndef update_task(task_id: int, body: TaskUpdate):\n    updated = db.update_task(task_id, **fix_schedule(task, fields))\n    if task[\"repeat\"] and \"tags\" in fields:\n        db.sync_children_tags(task_id, fields[\"tags\"])\n    return updated"}, {"id": "fn_api_post_message", "name": "api.post_message [POST /api/tasks/{id}/messages]", "file": "file_api", "kind": "endpoint", "line": "221-225", "desc": "用户在会话中追加消息并可选触发重新排队执行。", "code": "@api.post(\"/tasks/{task_id}/messages\")\ndef post_message(task_id: int, body: MessageCreate):\n    return db.post_user_message(task_id, body.content.strip(), body.run)"}, {"id": "fn_api_review", "name": "api.review [POST /api/review]", "file": "file_api", "kind": "endpoint", "line": "228-256", "desc": "AI 任务审核接口：提取可用 Skills，通过 agent.ask() 在隔离临时目录以只读方式快速审核任务可行性并给出完善后的 Markdown 描述。", "code": "@api.post(\"/review\")\ndef review(body: ReviewRequest):\n    listed = \"\\n\".join(f\"- {n}：{d}\" for n, d in skills.describe())\n    reply = agent.ask(prompt, tmp, rcfg.get(\"timeout\", 90), rcfg.get(\"model\", \"\"))\n    return json.loads(reply)"}, {"id": "fn_api_preview", "name": "api.preview [GET /preview/{id}/{path}]", "file": "file_api", "kind": "endpoint", "line": "298-311", "desc": "HTML 产物安全预览：校验相对工作目录安全性、支持携带 ?token 自动写入鉴权 Cookie 以保证相对静态资源加载。", "code": "@app.get(\"/preview/{task_id}/{path:path}\")\ndef preview(task_id: int, path: str, ...):\n    root = Path(task[\"workspace\"]).resolve()\n    file = (root / path).resolve()\n    resp = FileResponse(file)\n    if token:\n        resp.set_cookie(\"token\", token, httponly=True)\n    return resp"}, {"id": "fn_api_pick_dir", "name": "api.pick_dir [POST /api/pick-dir]", "file": "file_api", "kind": "endpoint", "line": "259-273", "desc": "macOS 原生目录选择框：通过 AppleScript (osascript) 弹出系统原生文件夹选择弹窗并返回用户选中的绝对路径。", "code": "@api.post(\"/pick-dir\")\ndef pick_dir(start: str = \"\"):\n    p = subprocess.run([\"osascript\", \"-e\", PICK_DIR_SCRIPT, *args], ...)\n    return {\"path\": p.stdout.strip()}"}, {"id": "fn_skills_init", "name": "skills.init()", "file": "file_skills", "kind": "function", "line": "11-14", "desc": "初始化 Skill 源目录 (skills/) 与目标安装相对路径 (.agents/skills)。", "code": "def init(cfg: dict) -> None:\n    _src = Path(cfg[\"dir\"]).resolve() if cfg.get(\"dir\") else None\n    _target = cfg.get(\"target\") or \".agents/skills\""}, {"id": "fn_skills_describe", "name": "skills.describe()", "file": "file_skills", "kind": "function", "line": "17-31", "desc": "扫描 skills 目录下所有 SKILL.md，解析 YAML Frontmatter 提取 (name, description) 列表供 AI 审核时理解能力范围。", "code": "def describe() -> list:\n    for f in sorted(_src.glob(\"**/SKILL.md\")):\n        meta = yaml.safe_load(parts[1]) or {}\n        items.append((meta.get(\"name\"), meta.get(\"description\")))\n    return items"}, {"id": "fn_skills_install", "name": "skills.install()", "file": "file_skills", "kind": "function", "line": "34-44", "desc": "将 skills 目录下的所有技能子目录复制覆盖到任务工作目录的 .agents/skills 中，保证智能体随时读取最新版技能指令。", "code": "def install(workspace: str) -> list:\n    dst = Path(workspace).resolve() / _target\n    for d in sorted(_src.iterdir()):\n        shutil.copytree(d, dst / d.name, dirs_exist_ok=True)"}, {"id": "fn_agents_create_agent", "name": "create_agent()", "file": "file_agents_init", "kind": "function", "line": "10-14", "desc": "工厂函数：根据配置查找 AGENTS 字典并实例化 Agent 子类对象（如 CursorAgent）。", "code": "def create_agent(agent_cfg: dict) -> Agent:\n    name = agent_cfg[\"type\"]\n    return AGENTS[name](agent_cfg.get(name) or {})"}, {"id": "fn_agent_stream_cmd", "name": "Agent.stream_cmd()", "file": "file_agents_base", "kind": "method", "line": "33-56", "desc": "基类核心命令执行器：启动子进程、注入环境变量、逐行流式读取 stdout 回调、带独立定时器超时熔断 (kill)。", "code": "def stream_cmd(self, cmd: list, workspace: str, on_line: Callable, timeout: int = None):\n    p = subprocess.Popen(cmd, cwd=workspace, stdout=subprocess.PIPE, stderr=err, text=True)\n    timer = threading.Timer(timeout, lambda: (timed_out.set(), p.kill()))\n    for line in p.stdout:\n        on_line(line.strip())"}, {"id": "fn_cursor_run", "name": "CursorAgent.run()", "file": "file_agents_cursor", "kind": "method", "line": "24-80", "desc": "CursorAgent 核心对话驱动：调用 cursor-agent CLI，解析 stream-json 协议，实时回调 thinking 思考状态、tool_call 进度与会话 ID。", "code": "def run(self, prompt: str, workspace: str, session_id: str, on_event: EventCallback) -> str:\n    cmd = [\"cursor-agent\", \"-p\", \"--output-format\", \"stream-json\", \"--workspace\", workspace, ...]\n    if session_id: cmd += [\"--resume\", session_id]\n    self.stream_cmd(cmd, workspace, on_line)\n    return st[\"said\"] or result.get(\"result\")"}, {"id": "fn_cursor_ask", "name": "CursorAgent.ask()", "file": "file_agents_cursor", "kind": "method", "line": "82-98", "desc": "CursorAgent 问答驱动：带 --mode ask 参数以只读模式运行，不建会话不改文件，获取 JSON 审核结果。", "code": "def ask(self, prompt: str, workspace: str, timeout: int, model: str = \"\") -> str:\n    cmd = [\"cursor-agent\", \"-p\", \"--output-format\", \"json\", \"--mode\", \"ask\", ...]\n    self.stream_cmd(cmd, workspace, out.append, timeout)\n    return result.get(\"result\")"}, {"id": "fn_cursor_describe_tool", "name": "cursor._describe_tool()", "file": "file_agents_cursor", "kind": "function", "line": "101-115", "desc": "解析 CLI 返回的 tool_call 数据结构，转换为人类友好的中文进度提示（如‘读取 config.yaml’、‘执行命令 npm run build’）。", "code": "def _describe_tool(tool_call: dict) -> str:\n    label = TOOL_LABELS.get(name, name)\n    detail = next((str(args[k]) for k in (\"command\", \"path\", \"pattern\")), \"\")\n    return f\"{label} {detail}\".strip()"}], "function_links": [{"source": "fn_main", "target": "fn_db_init", "label": "初始化数据库"}, {"source": "fn_main", "target": "fn_skills_init", "label": "配置技能目录"}, {"source": "fn_main", "target": "fn_agents_create_agent", "label": "创建 Agent 实例"}, {"source": "fn_main", "target": "fn_worker_start", "label": "启动后台 Worker"}, {"source": "fn_main", "target": "fn_api_create_app", "label": "构建 FastAPI 实例"}, {"source": "fn_worker_start", "target": "fn_worker_loop", "label": "启动 Worker 线程"}, {"source": "fn_worker_start", "target": "fn_worker_schedule_loop", "label": "启动 Scheduler 线程"}, {"source": "fn_worker_schedule_loop", "target": "fn_db_spawn_due", "label": "派生到期定时任务"}, {"source": "fn_db_spawn_due", "target": "fn_db_spawn_run", "label": "执行派生"}, {"source": "fn_db_spawn_run", "target": "fn_db_create_task", "label": "创建新任务"}, {"source": "fn_worker_loop", "target": "fn_db_claim_next", "label": "原子抢占 todo 任务"}, {"source": "fn_worker_loop", "target": "fn_worker_run", "label": "执行任务"}, {"source": "fn_worker_run", "target": "fn_worker_build_prompt", "label": "组装 Prompt & 规则"}, {"source": "fn_worker_run", "target": "fn_skills_install", "label": "同步 Skills 至工作目录"}, {"source": "fn_worker_run", "target": "fn_cursor_run", "label": "驱动 Agent 对话 (run)"}, {"source": "fn_worker_run", "target": "fn_worker_html_links", "label": "提取 HTML 产物链接"}, {"source": "fn_worker_run", "target": "fn_db_finish_run", "label": "结束一轮并更新状态"}, {"source": "fn_cursor_run", "target": "fn_agent_stream_cmd", "label": "流式运行 cursor-agent"}, {"source": "fn_cursor_run", "target": "fn_cursor_describe_tool", "label": "格式化工具调用进度"}, {"source": "fn_cursor_ask", "target": "fn_agent_stream_cmd", "label": "只读执行 cursor-agent"}, {"source": "fn_api_create_task", "target": "fn_db_create_task", "label": "保存任务"}, {"source": "fn_api_create_task", "target": "fn_skills_install", "label": "预置 Skills"}, {"source": "fn_api_update_task", "target": "fn_db_update_task", "label": "更新字段"}, {"source": "fn_api_post_message", "target": "fn_db_post_user_message", "label": "写入用户消息"}, {"source": "fn_api_review", "target": "fn_skills_describe", "label": "获取可用 Skills 列表"}, {"source": "fn_api_review", "target": "fn_cursor_ask", "label": "只读模式快速审核"}]};
+
+    // 全局状态
+    let currentLevel = "file"; // "folder" | "file" | "function" | "hybrid"
+    let currentLayout = "force"; // "force" | "hierarchical"
+    let selectedNodeId = null;
+    let simulation = null;
+    let zoomBehavior = null;
+
+    // SVG 视口尺寸
+    const viewport = document.getElementById("viewport");
+    let width = viewport.clientWidth;
+    let height = viewport.clientHeight;
+
+    const svg = d3.select("#graph-svg");
+    const gCanvas = d3.select("#canvas-layer");
+    const gClusters = d3.select("#clusters-layer");
+    const gEdges = d3.select("#edges-layer");
+    const gNodes = d3.select("#nodes-layer");
+
+    // 语义缩放区间阈值
+    const ZOOM_THRESHOLDS = {
+      FOLDER_MAX: 0.75,
+      FILE_MAX: 1.45
+    };
+
+    // 缩放行为配置
+    zoomBehavior = d3.zoom()
+      .scaleExtent([0.25, 4.0])
+      .on("zoom", (event) => {
+        gCanvas.attr("transform", event.transform);
+        updateSemanticZoom(event.transform.k);
+      });
+
+    svg.call(zoomBehavior);
+
+    function updateSemanticZoom(scale) {
+      const fillBar = document.getElementById("zoom-scale-fill");
+      const scaleText = document.getElementById("zoom-scale-text");
+      const titleText = document.getElementById("zoom-level-title");
+
+      const norm = Math.min(Math.max((scale - 0.25) / 3.75, 0), 1) * 100;
+      fillBar.style.width = `${norm}%`;
+      scaleText.innerText = `Zoom Scale: ${scale.toFixed(2)}x (滚轮自适应)`;
+
+      let detectedLevel = "file";
+      if (scale < ZOOM_THRESHOLDS.FOLDER_MAX) {
+        detectedLevel = "folder";
+      } else if (scale >= ZOOM_THRESHOLDS.FILE_MAX) {
+        detectedLevel = "function";
+      } else {
+        detectedLevel = "file";
+      }
+
+      // 仅在非 hybrid 时根据滚轮缩放自动切换激活状态
+      if (currentLevel !== "hybrid" && currentLevel !== detectedLevel) {
+        currentLevel = detectedLevel;
+        updateGranularityUI(currentLevel);
+        renderGraph();
+      }
+
+      if (currentLevel === "hybrid") {
+        titleText.innerHTML = "<span>🌐 当前粒度：混合全景透视</span>";
+      } else if (currentLevel === "folder") {
+        titleText.innerHTML = "<span>📁 当前粒度：文件夹宏观层级</span>";
+      } else if (currentLevel === "file") {
+        titleText.innerHTML = "<span>📄 当前粒度：文件依赖层级</span>";
+      } else {
+        titleText.innerHTML = "<span>⚡ 当前粒度：函数/方法调用层级</span>";
+      }
+    }
+
+    // 提取当前粒度下的节点与边
+    function getActiveElements(level) {
+      let nodes = [];
+      let links = [];
+
+      if (level === "folder") {
+        nodes = GRAPH_DATA.folders.map(d => ({
+          ...d,
+          radius: 46,
+          level: "folder",
+          displayTitle: d.name,
+          subTitle: d.metrics
+        }));
+        links = GRAPH_DATA.folder_links.map(l => ({ ...l }));
+      } else if (level === "file") {
+        nodes = GRAPH_DATA.files.map(d => ({
+          ...d,
+          radius: 32,
+          level: "file",
+          displayTitle: d.name,
+          subTitle: `${d.lines} lines • ${d.type.toUpperCase()}`
+        }));
+        links = GRAPH_DATA.file_links.map(l => ({ ...l }));
+      } else if (level === "function") {
+        nodes = GRAPH_DATA.functions.map(d => ({
+          ...d,
+          radius: 24,
+          level: "function",
+          color: d.kind === "endpoint" ? "#60a5fa" : (d.file.includes("agent") ? "#f472b6" : (d.file.includes("db") ? "#fbbf24" : "#34d399")),
+          displayTitle: d.name,
+          subTitle: `L${d.line}`
+        }));
+        links = GRAPH_DATA.function_links.map(l => ({ ...l }));
+      } else if (level === "hybrid") {
+        const fNodes = GRAPH_DATA.files.map(d => ({
+          ...d,
+          radius: 32,
+          level: "file",
+          displayTitle: d.name,
+          subTitle: "File Module"
+        }));
+        const fnNodes = GRAPH_DATA.functions.map(d => ({
+          ...d,
+          radius: 20,
+          level: "function",
+          color: d.kind === "endpoint" ? "#60a5fa" : "#34d399",
+          displayTitle: d.name,
+          subTitle: `L${d.line}`
+        }));
+        nodes = [...fNodes, ...fnNodes];
+        
+        const crossLinks = GRAPH_DATA.functions.map(fn => ({
+          source: fn.file,
+          target: fn.id,
+          label: "contains",
+          type: "contains"
+        }));
+        links = [...GRAPH_DATA.file_links, ...GRAPH_DATA.function_links, ...crossLinks];
+      }
+
+      return { nodes, links };
+    }
+
+    // 分层拓扑布局计算
+    function applyHierarchicalLayout(nodes) {
+      if (currentLevel === "folder") {
+        const ranks = { "dir_root": 0, "dir_static": 1, "dir_app": 1, "dir_agents": 2 };
+        nodes.forEach(n => {
+          const r = ranks[n.id] || 0;
+          n.fy = height * 0.25 + r * (height * 0.25);
+          if (n.id === "dir_root") n.fx = width * 0.5;
+          if (n.id === "dir_static") n.fx = width * 0.3;
+          if (n.id === "dir_app") n.fx = width * 0.7;
+          if (n.id === "dir_agents") n.fx = width * 0.7;
+        });
+      } else if (currentLevel === "file") {
+        nodes.forEach(n => {
+          if (n.id.includes("main") || n.id.includes("config") || n.id.includes("pyproject") || n.id.includes("readme")) {
+            n.fy = height * 0.18;
+          } else if (n.id.includes("api") || n.id.includes("static")) {
+            n.fy = height * 0.45;
+          } else if (n.id.includes("worker") || n.id.includes("skills")) {
+            n.fy = height * 0.65;
+          } else {
+            n.fy = height * 0.85;
+          }
+        });
+      }
+    }
+
+    // 渲染图谱
+    function renderGraph() {
+      const { nodes, links } = getActiveElements(currentLevel);
+
+      if (simulation) simulation.stop();
+
+      // 清除旧元素
+      gEdges.selectAll("*").remove();
+      gNodes.selectAll("*").remove();
+      gClusters.selectAll("*").remove();
+
+      if (currentLayout === "hierarchical") {
+        applyHierarchicalLayout(nodes);
+      }
+
+      // 构建力导向仿真
+      simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(d => {
+          if (currentLevel === "folder") return 220;
+          if (currentLevel === "file") return 150;
+          return 100;
+        }))
+        .force("charge", d3.forceManyBody().strength(d => {
+          if (currentLayout === "hierarchical") return -200;
+          if (currentLevel === "folder") return -1800;
+          if (currentLevel === "file") return -900;
+          return -450;
+        }))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(d => d.radius + 24));
+
+      // 绘制边 (Edges)
+      const edgeSelection = gEdges.selectAll(".edge-line")
+        .data(links)
+        .enter()
+        .append("g")
+        .attr("class", "edge-g");
+
+      const edgePaths = edgeSelection.append("line")
+        .attr("class", "edge-line")
+        .attr("stroke-width", d => d.type === "contains" ? 1.2 : 1.8)
+        .attr("stroke-dasharray", d => d.type === "contains" ? "4 3" : "none")
+        .attr("marker-end", d => d.type === "contains" ? "" : "url(#arrow-default)");
+
+      const edgeLabels = edgeSelection.append("text")
+        .attr("class", "edge-label")
+        .text(d => d.label || "");
+
+      // 绘制节点 (Nodes)
+      const nodeSelection = gNodes.selectAll(".node-g")
+        .data(nodes)
+        .enter()
+        .append("g")
+        .attr("class", "node-g")
+        .attr("id", d => `node-${d.id}`)
+        .call(d3.drag()
+          .on("start", dragstarted)
+          .on("drag", dragged)
+          .on("end", dragended))
+        .on("click", (event, d) => {
+          event.stopPropagation();
+          selectNode(d);
+        })
+        .on("mouseenter", (event, d) => highlightConnected(d, true))
+        .on("mouseleave", () => highlightConnected(null, false));
+
+      // 节点底色形状
+      nodeSelection.append("circle")
+        .attr("class", "node-shape")
+        .attr("r", d => d.radius)
+        .attr("fill", d => d.color || "#4f46e5")
+        .attr("stroke", "#1e293b")
+        .attr("stroke-width", 2.5);
+
+      // 节点主标题
+      nodeSelection.append("text")
+        .attr("class", "node-text")
+        .attr("text-anchor", "middle")
+        .attr("dy", d => d.subTitle ? "-3px" : "4px")
+        .attr("font-size", d => d.radius > 35 ? "13px" : (d.radius > 25 ? "11px" : "10px"))
+        .text(d => truncate(d.displayTitle, d.radius > 30 ? 18 : 12));
+
+      // 节点副标题
+      nodeSelection.append("text")
+        .attr("class", "node-subtext")
+        .attr("text-anchor", "middle")
+        .attr("dy", "12px")
+        .text(d => d.subTitle || "");
+
+      // 物理引擎 Tick 更新
+      simulation.on("tick", () => {
+        edgePaths
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        edgeLabels
+          .attr("x", d => (d.source.x + d.target.x) / 2)
+          .attr("y", d => (d.source.y + d.target.y) / 2 - 4);
+
+        nodeSelection
+          .attr("transform", d => `translate(${d.x},${d.y})`);
+      });
+
+      // 保持当前选中的高亮状态
+      if (selectedNodeId) {
+        const found = nodes.find(n => n.id === selectedNodeId);
+        if (found) selectNode(found);
+      }
+    }
+
+    function truncate(str, maxLen) {
+      if (!str) return "";
+      return str.length > maxLen ? str.substring(0, maxLen - 1) + "…" : str;
+    }
+
+    // 拖拽事件
+    function dragstarted(event, d) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+    function dragended(event, d) {
+      if (!event.active) simulation.alphaTarget(0);
+      if (currentLayout !== "hierarchical") {
+        d.fx = null;
+        d.fy = null;
+      }
+    }
+
+    // 高亮连通路径
+    function highlightConnected(targetNode, enable) {
+      if (!enable) {
+        if (!selectedNodeId) {
+          gNodes.selectAll(".node-g").classed("dimmed", false);
+          gEdges.selectAll(".edge-line").classed("highlight", false).classed("dimmed", false)
+            .attr("marker-end", "url(#arrow-default)");
+        }
+        return;
+      }
+
+      const connectedNodeIds = new Set([targetNode.id]);
+      const connectedEdges = new Set();
+
+      const { links } = getActiveElements(currentLevel);
+      links.forEach(l => {
+        const sId = typeof l.source === "object" ? l.source.id : l.source;
+        const tId = typeof l.target === "object" ? l.target.id : l.target;
+        if (sId === targetNode.id || tId === targetNode.id) {
+          connectedNodeIds.add(sId);
+          connectedNodeIds.add(tId);
+          connectedEdges.add(`${sId}->${tId}`);
+        }
+      });
+
+      gNodes.selectAll(".node-g")
+        .classed("dimmed", d => !connectedNodeIds.has(d.id));
+
+      gEdges.selectAll(".edge-line")
+        .classed("highlight", d => {
+          const sId = typeof d.source === "object" ? d.source.id : d.source;
+          const tId = typeof d.target === "object" ? d.target.id : d.target;
+          return connectedEdges.has(`${sId}->${tId}`);
+        })
+        .classed("dimmed", d => {
+          const sId = typeof d.source === "object" ? d.source.id : d.source;
+          const tId = typeof d.target === "object" ? d.target.id : d.target;
+          return !connectedEdges.has(`${sId}->${tId}`);
+        })
+        .attr("marker-end", d => {
+          const sId = typeof d.source === "object" ? d.source.id : d.source;
+          const tId = typeof d.target === "object" ? d.target.id : d.target;
+          return connectedEdges.has(`${sId}->${tId}`) ? "url(#arrow-highlight)" : "url(#arrow-default)";
+        });
+    }
+
+    // 选中节点并打开详情抽屉
+    function selectNode(node) {
+      selectedNodeId = node.id;
+      gNodes.selectAll(".node-g").classed("selected", d => d.id === node.id);
+
+      highlightConnected(node, true);
+
+      // 填充侧边栏信息
+      const sidebar = document.getElementById("sidebar");
+      const badge = document.getElementById("inspector-badge");
+      const title = document.getElementById("inspector-title");
+      const path = document.getElementById("inspector-path");
+      const desc = document.getElementById("inspector-desc");
+      const codeSec = document.getElementById("inspector-code-section");
+      const code = document.getElementById("inspector-code");
+      const inboundList = document.getElementById("inspector-inbound");
+      const outboundList = document.getElementById("inspector-outbound");
+
+      title.innerText = node.name || node.displayTitle;
+      path.innerText = node.path || node.file || "TodoAgent Project";
+      desc.innerText = node.desc || (node.responsibilities ? node.responsibilities.join("; ") : "核心模块实体");
+
+      if (node.level === "folder") {
+        badge.innerText = "📁 FOLDER MODULE";
+        badge.style.background = "#312e81";
+        badge.style.color = "#a5b4fc";
+      } else if (node.level === "file") {
+        badge.innerText = `📄 FILE (${node.type ? node.type.toUpperCase() : "PY"})`;
+        badge.style.background = "#075985";
+        badge.style.color = "#7dd3fc";
+      } else {
+        badge.innerText = node.kind === "endpoint" ? "🌐 API ENDPOINT" : "⚡ FUNCTION / METHOD";
+        badge.style.background = "#065f46";
+        badge.style.color = "#6ee7b7";
+      }
+
+      if (node.code) {
+        codeSec.style.display = "block";
+        code.innerText = node.code;
+      } else {
+        codeSec.style.display = "none";
+      }
+
+      // 计算上下游依赖
+      const inbounds = [];
+      const outbounds = [];
+      const { links } = getActiveElements(currentLevel);
+
+      links.forEach(l => {
+        const sId = typeof l.source === "object" ? l.source.id : l.source;
+        const tId = typeof l.target === "object" ? l.target.id : l.target;
+        if (tId === node.id) {
+          inbounds.push({ id: sId, label: l.label || "CALL" });
+        }
+        if (sId === node.id) {
+          outbounds.push({ id: tId, label: l.label || "CALL" });
+        }
+      });
+
+      inboundList.innerHTML = inbounds.length ? inbounds.map(i => `
+        <div class="rel-item" onclick="focusNode('${i.id}')">
+          <span class="rel-name">${i.id}</span>
+          <span class="rel-type">${i.label}</span>
+        </div>
+      `).join("") : "<div style='font-size:12px;color:var(--text-sub);'>无直接上游</div>";
+
+      outboundList.innerHTML = outbounds.length ? outbounds.map(o => `
+        <div class="rel-item" onclick="focusNode('${o.id}')">
+          <span class="rel-name">${o.id}</span>
+          <span class="rel-type">${o.label}</span>
+        </div>
+      `).join("") : "<div style='font-size:12px;color:var(--text-sub);'>无直接下游</div>";
+
+      sidebar.classList.add("open");
+    }
+
+    // 聚焦某个节点
+    function focusNode(nodeId) {
+      const { nodes } = getActiveElements(currentLevel);
+      let target = nodes.find(n => n.id === nodeId);
+      if (!target) {
+        if (nodeId.startsWith("fn_")) {
+          setGranularity("function");
+        } else if (nodeId.startsWith("file_")) {
+          setGranularity("file");
+        } else if (nodeId.startsWith("dir_")) {
+          setGranularity("folder");
+        }
+        setTimeout(() => {
+          const { nodes: updatedNodes } = getActiveElements(currentLevel);
+          target = updatedNodes.find(n => n.id === nodeId);
+          if (target) zoomToNode(target);
+        }, 350);
+        return;
+      }
+      zoomToNode(target);
+    }
+
+    function zoomToNode(node) {
+      selectNode(node);
+      svg.transition().duration(750).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(width / 2 - node.x * 1.5, height / 2 - node.y * 1.5).scale(1.5)
+      );
+    }
+
+    // 设置粒度与平滑过渡
+    function setGranularity(level) {
+      currentLevel = level;
+      updateGranularityUI(level);
+
+      let targetScale = 1.0;
+      if (level === "folder") targetScale = 0.55;
+      if (level === "file") targetScale = 1.0;
+      if (level === "function") targetScale = 1.65;
+      if (level === "hybrid") targetScale = 0.9;
+
+      svg.transition().duration(600).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(width / 2, height / 2).scale(targetScale).translate(-width / 2, -height / 2)
+      );
+
+      renderGraph();
+    }
+
+    function updateGranularityUI(level) {
+      document.querySelectorAll("#granularity-control .seg-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.level === level);
+      });
+    }
+
+    // 初始化事件监听
+    document.querySelectorAll("#granularity-control .seg-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        setGranularity(btn.dataset.level);
+      });
+    });
+
+    document.getElementById("layout-select").addEventListener("change", (e) => {
+      currentLayout = e.target.value;
+      renderGraph();
+    });
+
+    document.getElementById("btn-close-sidebar").addEventListener("click", () => {
+      document.getElementById("sidebar").classList.remove("open");
+      selectedNodeId = null;
+      highlightConnected(null, false);
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", () => {
+      svg.transition().duration(600).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(0, 0).scale(1)
+      );
+    });
+
+    document.getElementById("btn-zoom-in").addEventListener("click", () => {
+      svg.transition().duration(300).call(zoomBehavior.scaleBy, 1.3);
+    });
+
+    document.getElementById("btn-zoom-out").addEventListener("click", () => {
+      svg.transition().duration(300).call(zoomBehavior.scaleBy, 0.7);
+    });
+
+    // 搜索功能实现
+    const searchInput = document.getElementById("search-input");
+    const searchDropdown = document.getElementById("search-dropdown");
+
+    const allSearchItems = [
+      ...GRAPH_DATA.folders.map(d => ({ id: d.id, name: d.name, level: "folder", tag: "Folder" })),
+      ...GRAPH_DATA.files.map(d => ({ id: d.id, name: d.name, level: "file", tag: "File" })),
+      ...GRAPH_DATA.functions.map(d => ({ id: d.id, name: d.name, level: "function", tag: "Function" }))
+    ];
+
+    searchInput.addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      if (!q) {
+        searchDropdown.style.display = "none";
+        return;
+      }
+      const matches = allSearchItems.filter(item => item.name.toLowerCase().includes(q)).slice(0, 8);
+      if (!matches.length) {
+        searchDropdown.innerHTML = "<div style='padding:10px;font-size:12px;color:var(--text-sub);'>未找到匹配实体</div>";
+      } else {
+        searchDropdown.innerHTML = matches.map(m => `
+          <div class="search-item" onclick="handleSearchSelect('${m.id}', '${m.level}')">
+            <span>${m.name}</span>
+            <span class="search-item-tag">${m.tag}</span>
+          </div>
+        `).join("");
+      }
+      searchDropdown.style.display = "block";
+    });
+
+    function handleSearchSelect(nodeId, level) {
+      searchDropdown.style.display = "none";
+      searchInput.value = "";
+      focusNode(nodeId);
+    }
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".search-box")) {
+        searchDropdown.style.display = "none";
+      }
+    });
+
+    // 窗口尺寸自适应
+    window.addEventListener("resize", () => {
+      width = viewport.clientWidth;
+      height = viewport.clientHeight;
+      if (simulation) {
+        simulation.force("center", d3.forceCenter(width / 2, height / 2)).restart();
+      }
+    });
+
+    // 初始渲染
+    renderGraph();
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+data/
+tasks/
+.venv/
+__pycache__/
+uv.lock
+.DS_Store

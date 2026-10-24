@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TodoAgent 架构图</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --panel2: #1e2739; --line: #2c3850;
+    --text: #e4e9f2; --muted: #8b97ad; --accent: #5b9cff;
+    --c-client: #4fb3ff; --c-entry: #b48cff; --c-service: #3ddc97; --c-agent: #ffb454;
+    --c-store: #ff7a90; --c-ext: #9aa5b8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+  header { padding: 22px 32px 8px; }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  nav { display: flex; gap: 6px; padding: 12px 32px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; flex-wrap: wrap; }
+  nav button { background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  nav button.on { color: #fff; border-color: var(--accent); background: #1d2c4a; }
+  section { display: none; padding: 20px 32px 40px; }
+  section.on { display: block; }
+  .intro { color: var(--muted); margin: 0 0 14px; max-width: 900px; }
+  .wrap { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  svg { width: 100%; height: auto; display: block; user-select: none; }
+  .side h3 { margin: 0 0 6px; font-size: 16px; }
+  .side .path { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); }
+  .side ul { padding-left: 18px; margin: 8px 0; }
+  .side li { margin: 3px 0; }
+  .side code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; margin-right: 4px; color: #0f1420; font-weight: 600; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  .node rect { stroke-width: 1.5; transition: all .2s; cursor: pointer; }
+  .node text { pointer-events: none; }
+  .node.dim, .edge.dim { opacity: .15; }
+  .node.sel rect { stroke-width: 3; filter: drop-shadow(0 0 8px rgba(91,156,255,.6)); }
+  .edge path { fill: none; stroke: #55637e; stroke-width: 1.6; transition: all .2s; }
+  .edge text { fill: var(--muted); font-size: 10.5px; }
+  .edge.hot path { stroke: var(--accent); stroke-width: 2.4; stroke-dasharray: 6 4; animation: flow .6s linear infinite; }
+  .edge.hot text { fill: #cfe0ff; }
+  @keyframes flow { to { stroke-dashoffset: -10; } }
+  .layer-label { fill: #5e6b84; font-size: 11px; letter-spacing: 2px; }
+
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn.primary { background: #2a4f8f; border-color: #3d6bc0; }
+  .log { font-size: 12px; color: var(--muted); max-height: 220px; overflow: auto; margin-top: 8px; }
+  .log div { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .log b { color: var(--text); font-weight: 500; }
+
+  .st circle { stroke-width: 2; transition: all .25s; }
+  .st.cur circle { stroke-width: 4; filter: drop-shadow(0 0 10px currentColor); }
+  .tr path { fill: none; stroke: #4a5874; stroke-width: 1.8; transition: all .25s; }
+  .tr text { fill: var(--muted); font-size: 11px; transition: all .25s; }
+  .tr.avail path { stroke: #8fb6ff; }
+  .tr.avail text { fill: #cfe0ff; }
+  .tr.fired path { stroke: #3ddc97; stroke-width: 3.5; }
+
+  .seq-step { fill: var(--muted); font-size: 11px; }
+  .msg line { stroke-width: 1.8; }
+  .msg text { font-size: 11.5px; }
+  .msg { opacity: .1; transition: opacity .3s; }
+  .msg.show { opacity: .45; }
+  .msg.now { opacity: 1; }
+  .steptext { min-height: 66px; }
+
+  .er-col { cursor: help; }
+  .er-col:hover rect { fill: #26324a; }
+  .tip { position: fixed; pointer-events: none; background: #0b0f18; border: 1px solid var(--accent); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 12px; max-width: 320px; display: none; z-index: 50; }
+
+  .sim { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+  .sim label { display: block; margin: 10px 0; }
+  .sim input[type=range] { width: 100%; }
+  pre.prompt { white-space: pre-wrap; background: #0b0f18; border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 12.5px; min-height: 200px; margin: 0; }
+  pre.prompt .hl1 { color: #b48cff; } pre.prompt .hl2 { color: #3ddc97; } pre.prompt .hl3 { color: #ffb454; }
+  .ev-row { cursor: pointer; }
+  @media (max-width: 1000px) { .wrap, .sim { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>TodoAgent 架构总览</h1>
+  <p>个人待办看板：添加任务，后台 Worker 自动领取并通过 Agent（cursor-agent CLI）执行。Python · FastAPI · SQLite · 原生前端。</p>
+</header>
+<nav id="tabs">
+  <button data-t="arch" class="on">① 模块架构</button>
+  <button data-t="state">② 任务状态机</button>
+  <button data-t="seq">③ 执行时序</button>
+  <button data-t="events">④ Agent 事件流</button>
+  <button data-t="er">⑤ 数据模型</button>
+  <button data-t="prompt">⑥ Prompt 构建</button>
+</nav>
+
+<!-- ① 架构 -->
+<section id="arch" class="on">
+  <p class="intro">悬停模块可高亮它的依赖与调用关系，点击查看职责、关键函数。整体是<b>单进程</b>：<span class="mono">main.py</span> 启动 uvicorn HTTP 服务，同时拉起 N 个守护线程作为 Worker，两者只通过 SQLite 交换状态。</p>
+  <div class="wrap">
+    <div class="card"><svg id="archSvg" viewBox="0 0 1000 640"></svg>
+      <div class="legend" id="archLegend"></div>
+    </div>
+    <div class="card side" id="archSide"></div>
+  </div>
+</section>
+
+<!-- ② 状态机 -->
+<section id="state">
+  <p class="intro">任务有 5 种状态。点击下方按钮触发事件，观察状态流转（蓝色箭头为当前可用的转换）。</p>
+  <div class="wrap">
+    <div class="card"><svg id="stateSvg" viewBox="0 0 1000 520"></svg></div>
+    <div class="card side">
+      <h3>当前状态：<span id="curState"></span></h3>
+      <div class="btns" id="stateBtns"></div>
+      <button class="btn" id="stateReset">重置</button>
+      <div class="log" id="stateLog"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ③ 时序 -->
+<section id="seq">
+  <p class="intro">一次完整的「创建任务 → Worker 执行 → 用户追问 → 继续会话」流程。可逐步播放或自动播放。</p>
+  <div class="card">
+    <div class="btns">
+      <button class="btn" id="seqPrev">◀ 上一步</button>
+      <button class="btn primary" id="seqPlay">▶ 自动播放</button>
+      <button class="btn" id="seqNext">下一步 ▶</button>
+      <button class="btn" id="seqReset">重置</button>
+      <span id="seqCount" style="color:var(--muted);align-self:center"></span>
+    </div>
+    <div class="steptext" id="seqText"></div>
+    <svg id="seqSvg" viewBox="0 0 1000 760"></svg>
+  </div>
+</section>
+
+<!-- ④ 事件流 -->
+<section id="events">
+  <p class="intro"><span class="mono">CursorAgent</span> 逐行解析 <span class="mono">cursor-agent --output-format stream-json</span> 的输出，转换为统一的 <span class="mono">on_event(kind, data)</span>，再由 Worker 落库。点击左侧事件类型查看映射路径。</p>
+  <div class="wrap">
+    <div class="card"><svg id="evSvg" viewBox="0 0 1000 470"></svg></div>
+    <div class="card side" id="evSide"></div>
+  </div>
+</section>
+
+<!-- ⑤ ER -->
+<section id="er">
+  <p class="intro">两张表：<span class="mono">tasks</span> 与 <span class="mono">messages</span>（1:N）。字段定义集中在 <span class="mono">db.COLUMNS</span>，启动时自动给旧库补列。悬停字段查看说明。</p>
+  <div class="card"><svg id="erSvg" viewBox="0 0 1000 520"></svg></div>
+</section>
+
+<!-- ⑥ Prompt -->
+<section id="prompt">
+  <p class="intro"><span class="mono">worker.build_prompt()</span> 根据「是否已有会话」和「未处理的用户消息」组合发给 Agent 的内容。调整左侧参数实时查看结果。</p>
+  <div class="sim">
+    <div class="card">
+      <label><input type="checkbox" id="pSession"> 已有 session_id（非首轮）</label>
+      <label>未处理用户消息数：<b id="pNumV">0</b><input type="range" id="pNum" min="0" max="3" value="0"></label>
+      <div class="legend">
+        <span><i style="background:#b48cff"></i>prompt_template</span>
+        <span><i style="background:#3ddc97"></i>followup_template</span>
+        <span><i style="background:#ffb454"></i>continue_prompt</span>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin-top:14px">执行失败时 <span class="mono">read_msg_id</span> 会回退，这轮的用户消息在重试时会被重新带上。</p>
+    </div>
+    <div class="card"><pre class="prompt" id="pOut"></pre></div>
+  </div>
+</section>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent, text) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const tip = document.getElementById("tip");
+const showTip = (e, html) => { tip.innerHTML = html; tip.style.display = "block"; tip.style.left = e.clientX + 14 + "px"; tip.style.top = e.clientY + 14 + "px"; };
+const hideTip = () => tip.style.display = "none";
+
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#tabs button, section").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); document.getElementById(b.dataset.t).classList.add("on");
+});
+
+/* ================= ① 模块架构 ================= */
+const C = { client: "#4fb3ff", entry: "#b48cff", service: "#3ddc97", agent: "#ffb454", store: "#ff7a90", ext: "#9aa5b8" };
+const LAYER_NAMES = { client: "客户端", entry: "入口 / 配置", service: "服务层", agent: "Agent 抽象层", store: "存储", ext: "外部" };
+const nodes = [
+  { id: "web", x: 120, y: 40, w: 200, h: 52, layer: "client", title: "看板前端", sub: "static/index.html",
+    desc: "无构建的单页看板。每 3s 轮询任务列表，打开详情时每 2s 增量拉取消息（after=最大消息 ID）。支持粘贴/拖入文件上传。",
+    fns: ["setInterval(refresh, 3000)", "pollView() 每 2s", "api(path) → fetch('/api'+path)"] },
+  { id: "cli", x: 400, y: 40, w: 200, h: 52, layer: "client", title: "API 客户端", sub: "curl / 脚本 / 定时任务",
+    desc: "任何 HTTP 客户端都可以创建任务，source 字段标记来源（web / api / schedule ...）。配置 api_token 时需带 Bearer。",
+    fns: ["POST /api/tasks", "Authorization: Bearer <token>"] },
+  { id: "cfg", x: 700, y: 140, w: 180, h: 52, layer: "entry", title: "config.yaml", sub: "全部可配置项",
+    desc: "server / logging / database / worker / task / agent 六段配置。prompt 模板、并发数、优先级、Agent 底层参数都在这里。",
+    fns: ["worker.concurrency", "worker.question_marker", "agent.type = cursor"] },
+  { id: "main", x: 400, y: 140, w: 200, h: 52, layer: "entry", title: "main.py", sub: "入口",
+    desc: "解析参数 → 读配置 → 配置日志 → 初始化 DB → 创建 Agent 并启动 Worker 线程 → uvicorn 运行 FastAPI。",
+    fns: ["db.init(cfg['database'])", "worker.start(cfg, create_agent(...))", "uvicorn.run(create_app(cfg))"] },
+  { id: "api", x: 120, y: 250, w: 240, h: 64, layer: "service", title: "HTTP API", sub: "app/api.py · FastAPI",
+    desc: "REST 接口 + 首页。负责参数校验（标题截断、优先级/状态合法性、workspace 存在性、标签去重）与 Token 鉴权。用户消息通过 db.post_user_message 决定是否重新排队。",
+    fns: ["GET/POST /api/tasks", "PATCH/DELETE /api/tasks/{id}", "GET/POST /api/tasks/{id}/messages", "POST /api/files · GET /api/files/{name}", "GET /api/info"] },
+  { id: "worker", x: 560, y: 250, w: 240, h: 64, layer: "service", title: "Worker 线程池", sub: "app/worker.py",
+    desc: "concurrency 个守护线程循环：claim_next 领取最高优先级 todo → 构建 prompt → agent.run → 根据回复是否含 [NEED_INPUT] 置为 waiting/done，异常则 failed。",
+    fns: ["_loop()  轮询 poll_interval", "build_prompt(cfg, task, pending)", "_run()  on_event 回调落库"] },
+  { id: "reg", x: 400, y: 370, w: 200, h: 52, layer: "agent", title: "Agent 注册表", sub: "app/agents/__init__.py",
+    desc: "AGENTS 字典按名字映射实现类，create_agent 根据 agent.type 实例化，并传入同名配置段。",
+    fns: ["AGENTS = {'cursor': CursorAgent}", "create_agent(agent_cfg)"] },
+  { id: "base", x: 120, y: 460, w: 220, h: 60, layer: "agent", title: "Agent 基类", sub: "app/agents/base.py",
+    desc: "定义 run(prompt, workspace, session_id, on_event) 接口与事件约定（session / say / progress / status）。stream_cmd 负责子进程、逐行回调、超时 kill 与错误收集。",
+    fns: ["run() 抽象方法", "stream_cmd(cmd, workspace, on_line)", "AgentError"] },
+  { id: "cursor", x: 420, y: 460, w: 220, h: 60, layer: "agent", title: "CursorAgent", sub: "app/agents/cursor.py",
+    desc: "拼装 cursor-agent 命令（--resume 续会话、--force、--model），解析 stream-json：system→session，thinking→status，assistant→say，tool_call→progress，result→最终回复。",
+    fns: ["run()", "_describe_tool(tool_call)", "TOOL_LABELS 工具名中文化"] },
+  { id: "db", x: 120, y: 570, w: 240, h: 56, layer: "store", title: "SQLite", sub: "app/db.py · data/tasks.db",
+    desc: "tasks + messages 两张表。全局 _lock 串行化「领取 / 用户发消息 / 结束执行」三处状态判断，避免竞态。启动时把残留 doing 任务标记为 failed。",
+    fns: ["claim_next()", "post_user_message()", "take_pending() / finish_run()"] },
+  { id: "files", x: 400, y: 570, w: 200, h: 56, layer: "store", title: "文件目录", sub: "data/files",
+    desc: "上传的图片/附件以 uuid8_原名 保存，绝对路径以 ![name](path) 写进任务描述，Agent 直接按路径读取。",
+    fns: ["POST /api/files", "GET /api/files/{name}"] },
+  { id: "ext", x: 720, y: 460, w: 200, h: 60, layer: "ext", title: "cursor-agent CLI", sub: "子进程 · stream-json",
+    desc: "真正干活的 Agent。在任务 workspace 中运行，读写代码、执行命令。需 cursor-agent login 或配置 CURSOR_API_KEY。",
+    fns: ["-p --output-format stream-json", "--trust --workspace <dir>", "--resume <session_id>"] },
+  { id: "ws", x: 720, y: 570, w: 200, h: 56, layer: "ext", title: "任务工作目录", sub: "task.workspace",
+    desc: "每个任务的工作目录，选填；不填时自动创建 task.workspace_template（默认 tasks/task_{id}）。指定时 API 会校验目录存在。",
+    fns: ["~/workspace（默认）"] },
+];
+const edges = [
+  ["web", "api", "HTTP 轮询"], ["cli", "api", "REST"],
+  ["cfg", "main", "加载"], ["main", "api", "create_app"], ["main", "worker", "start"], ["main", "reg", "create_agent"], ["main", "db", "init", "l"],
+  ["api", "db", "CRUD / 发消息"], ["api", "files", "上传/读取"],
+  ["worker", "db", "领取/进度/结束", "w"], ["worker", "base", "agent.run()", "wb"],
+  ["reg", "cursor", "实例化"], ["cursor", "base", "继承"], ["cursor", "ext", "subprocess"], ["ext", "ws", "读写代码"],
+];
+(function drawArch() {
+  const svg = document.getElementById("archSvg");
+  const defs = el("defs", {}, svg);
+  const mk = el("marker", { id: "arr", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+  el("path", { d: "M0,0 L10,5 L0,10 z", fill: "#7d8aa5" }, mk);
+  [["客户端", 66], ["入口", 166], ["服务层", 282], ["AGENT", 440], ["存储/外部", 598]].forEach(([t, y]) => el("text", { x: 10, y, class: "layer-label" }, svg, t));
+  const N = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const ctr = n => [n.x + n.w / 2, n.y + n.h / 2];
+  const port = (a, b) => { // 取 a 盒子边上朝向 b 的点
+    const [ax, ay] = ctr(a), [bx, by] = ctr(b), dx = bx - ax, dy = by - ay;
+    const s = Math.min(Math.abs((a.w / 2) / (dx || 1e-6)), Math.abs((a.h / 2) / (dy || 1e-6)));
+    return [ax + dx * s, ay + dy * s];
+  };
+  const eG = el("g", {}, svg), nG = el("g", {}, svg);
+  const edgeEls = edges.map(([f, t, label, mode]) => {
+    const a = N[f], b = N[t];
+    let d, lx, ly;
+    if (mode === "l") { // main → db 走左侧
+      d = `M${a.x},${a.y + a.h / 2} C40,${a.y + 30} 40,${b.y} ${b.x},${b.y + b.h / 2 - 10}`; lx = 72; ly = 225;
+    } else if (mode === "w") {
+      d = `M${a.x + a.w - 20},${a.y + a.h} C${a.x + a.w + 40},400 ${b.x + b.w + 40},560 ${b.x + b.w},${b.y + 20}`; lx = 640; ly = 545;
+    } else if (mode === "wb") {
+      d = `M${a.x + 30},${a.y + a.h} C${a.x},420 ${b.x + b.w + 60},440 ${b.x + b.w - 40},${b.y}`; lx = 330; ly = 405;
+    } else {
+      const [x1, y1] = port(a, b), [x2, y2] = port(b, a);
+      d = `M${x1},${y1} L${x2},${y2}`; lx = (x1 + x2) / 2 + 6; ly = (y1 + y2) / 2 - 4;
+    }
+    const g = el("g", { class: "edge" }, eG);
+    el("path", { d, "marker-end": "url(#arr)" }, g);
+    el("text", { x: lx, y: ly }, g, label);
+    return { f, t, g };
+  });
+  const nodeEls = {};
+  nodes.forEach(n => {
+    const g = el("g", { class: "node" }, nG);
+    el("rect", { x: n.x, y: n.y, width: n.w, height: n.h, rx: 10, fill: C[n.layer] + "22", stroke: C[n.layer] }, g);
+    el("text", { x: n.x + n.w / 2, y: n.y + n.h / 2 - 3, "text-anchor": "middle", fill: "#fff", "font-size": 14, "font-weight": 600 }, g, n.title);
+    el("text", { x: n.x + n.w / 2, y: n.y + n.h / 2 + 15, "text-anchor": "middle", fill: C[n.layer], "font-size": 11 }, g, n.sub);
+    g.onmouseenter = () => hl(n.id); g.onmouseleave = () => hl(null);
+    g.onclick = () => select(n.id);
+    nodeEls[n.id] = g;
+  });
+  function hl(id) {
+    if (!id) { Object.values(nodeEls).forEach(g => g.classList.remove("dim")); edgeEls.forEach(e => e.g.classList.remove("dim", "hot")); return; }
+    const near = new Set([id]);
+    edgeEls.forEach(e => { const on = e.f === id || e.t === id; e.g.classList.toggle("hot", on); e.g.classList.toggle("dim", !on); if (on) { near.add(e.f); near.add(e.t); } });
+    for (const k in nodeEls) nodeEls[k].classList.toggle("dim", !near.has(k));
+  }
+  function select(id) {
+    for (const k in nodeEls) nodeEls[k].classList.toggle("sel", k === id);
+    const n = N[id];
+    const out = edges.filter(e => e[0] === id).map(e => `→ ${N[e[1]].title}（${e[2]}）`);
+    const inn = edges.filter(e => e[1] === id).map(e => `← ${N[e[0]].title}（${e[2]}）`);
+    document.getElementById("archSide").innerHTML = `
+      <span class="tag" style="background:${C[n.layer]}">${LAYER_NAMES[n.layer]}</span>
+      <h3 style="margin-top:8px">${n.title}</h3><div class="path">${n.sub}</div>
+      <p>${n.desc}</p><b>关键点</b><ul>${n.fns.map(f => `<li><code>${f}</code></li>`).join("")}</ul>
+      <b>关系</b><ul>${[...inn, ...out].map(x => `<li>${x}</li>`).join("") || "<li>无</li>"}</ul>`;
+  }
+  document.getElementById("archLegend").innerHTML = Object.entries(LAYER_NAMES).map(([k, v]) => `<span><i style="background:${C[k]}"></i>${v}</span>`).join("");
+  select("worker");
+})();
+
+/* ================= ② 状态机 ================= */
+const SC = { todo: "#4fb3ff", doing: "#ffb454", waiting: "#b48cff", done: "#3ddc97", failed: "#ff7a90" };
+const SN = { todo: "todo 待办", doing: "doing 执行中", waiting: "waiting 待回复", done: "done 完成", failed: "failed 失败" };
+const SP = { todo: [170, 260], doing: [480, 260], waiting: [800, 90], done: [830, 270], failed: [800, 440] };
+const TR = [
+  { id: "claim", f: "todo", t: "doing", label: "Worker claim_next()", detail: "按 priority DESC, id 领取，置为 doing（持有 _lock）" },
+  { id: "ask", f: "doing", t: "waiting", label: "回复含 [NEED_INPUT]", detail: "Agent 需要用户决策，去掉标记后存为 result" },
+  { id: "ok", f: "doing", t: "done", label: "正常完成", detail: "finish_run(status='done')" },
+  { id: "err", f: "doing", t: "failed", label: "异常 / 超时 / 服务重启", detail: "read_msg_id 回退，未处理消息保留" },
+  { id: "requeue", f: "doing", t: "todo", label: "执行期间收到新消息", detail: "finish_run 发现 read_msg_id 之后有 user 消息 → 直接重新排队" },
+  { id: "replyW", f: "waiting", t: "todo", label: "用户回复 (run=true)", detail: "post_user_message：任务不在 doing → 置为 todo" },
+  { id: "replyD", f: "done", t: "todo", label: "追加消息 / 重新执行", detail: "发消息或 PATCH status=todo" },
+  { id: "retry", f: "failed", t: "todo", label: "重试", detail: "重新执行，本轮消息会再次发送" },
+];
+(function drawState() {
+  const svg = document.getElementById("stateSvg");
+  const defs = el("defs", {}, svg);
+  ["#4a5874", "#8fb6ff", "#3ddc97"].forEach((c, i) => {
+    const m = el("marker", { id: "sa" + i, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" }, defs);
+    el("path", { d: "M0,0 L10,5 L0,10 z", fill: c }, m);
+  });
+  const R = 58;
+  const trEls = {};
+  const curves = {
+    claim: [0, -40], ask: [0, -30], ok: [0, 0], err: [0, 30], requeue: [0, 140],
+    replyW: [-60, -150], replyD: [0, 0], retry: [-60, 160],
+  };
+  TR.forEach(tr => {
+    const [x1, y1] = SP[tr.f], [x2, y2] = SP[tr.t];
+    const [ox, oy] = curves[tr.id];
+    let d, lx, ly;
+    const shrink = (ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy); return [ax + dx / L * (R + 4), ay + dy / L * (R + 4)]; };
+    if (tr.id === "replyD") {
+      d = `M${x1 - 30},${y1 + R - 8} C700,420 300,430 ${x2 + 10},${y2 + R + 4}`; lx = 300; ly = 408;
+    } else if (tr.id === "requeue") {
+      d = `M${x1 - R + 4},${y1 + 18} Q325,330 ${x2 + R - 2},${y2 + 18}`; lx = 325; ly = 318;
+    } else {
+      const mx = (x1 + x2) / 2 + ox, my = (y1 + y2) / 2 + oy;
+      const [sx, sy] = shrink(x1, y1, mx, my), [ex, ey] = shrink(x2, y2, mx, my);
+      d = `M${sx},${sy} Q${mx},${my} ${ex},${ey}`; lx = mx; ly = my - 6;
+      if (tr.id === "replyW") { lx = 430; ly = 70; }
+      if (tr.id === "retry") { lx = 430; ly = 492; }
+      if (tr.id === "claim") { ly = my + 12; }
+      if (tr.id === "ok") { lx = 655; ly = 256; }
+      if (tr.id === "ask") { lx = 690; ly = 140; }
+      if (tr.id === "err") { lx = 690; ly = 390; }
+    }
+    const g = el("g", { class: "tr" }, svg);
+    const p = el("path", { d, "marker-end": "url(#sa0)" }, g);
+    el("text", { x: lx, y: ly, "text-anchor": "middle" }, g, tr.label);
+    g.onmousemove = e => showTip(e, `<b>${tr.label}</b><br>${tr.detail}`); g.onmouseleave = hideTip;
+    trEls[tr.id] = { g, p };
+  });
+  const stEls = {};
+  for (const s in SP) {
+    const [x, y] = SP[s];
+    const g = el("g", { class: "st", style: `color:${SC[s]}` }, svg);
+    el("circle", { cx: x, cy: y, r: R, fill: SC[s] + "1f", stroke: SC[s] }, g);
+    const [a, b] = SN[s].split(" ");
+    el("text", { x, y: y - 2, "text-anchor": "middle", fill: "#fff", "font-size": 16, "font-weight": 700 }, g, a);
+    el("text", { x, y: y + 18, "text-anchor": "middle", fill: SC[s], "font-size": 12 }, g, b);
+    stEls[s] = g;
+  }
+  let cur = "todo";
+  const log = document.getElementById("stateLog");
+  function render(fired) {
+    for (const s in stEls) stEls[s].classList.toggle("cur", s === cur);
+    document.getElementById("curState").innerHTML = `<span style="color:${SC[cur]}">${SN[cur]}</span>`;
+    TR.forEach(tr => {
+      const { g, p } = trEls[tr.id], av = tr.f === cur, fi = tr.id === fired;
+      g.classList.toggle("avail", av); g.classList.toggle("fired", fi);
+      p.setAttribute("marker-end", `url(#sa${fi ? 2 : av ? 1 : 0})`);
+    });
+    const box = document.getElementById("stateBtns"); box.innerHTML = "";
+    TR.filter(tr => tr.f === cur).forEach(tr => {
+      const b = document.createElement("button"); b.className = "btn"; b.textContent = tr.label;
+      b.onclick = () => { cur = tr.t; log.insertAdjacentHTML("afterbegin", `<div><b>${tr.f} → ${tr.t}</b>　${tr.detail}</div>`); render(tr.id); };
+      box.appendChild(b);
+    });
+  }
+  document.getElementById("stateReset").onclick = () => { cur = "todo"; log.innerHTML = ""; render(); };
+  render();
+})();
+
+/* ================= ③ 时序 ================= */
+const LANES = [
+  { id: "u", name: "用户/前端", c: "#4fb3ff" }, { id: "a", name: "API", c: "#3ddc97" }, { id: "d", name: "SQLite", c: "#ff7a90" },
+  { id: "w", name: "Worker", c: "#3ddc97" }, { id: "g", name: "CursorAgent", c: "#ffb454" }, { id: "x", name: "cursor-agent CLI", c: "#9aa5b8" },
+];
+const STEPS = [
+  ["u", "a", "POST /api/tasks", "用户在看板创建任务，API 校验并截断标题、补默认优先级和工作目录。"],
+  ["a", "d", "create_task → status=todo", "任务写入 tasks 表，初始状态 todo。"],
+  ["w", "d", "claim_next()", "Worker 线程轮询（默认 3s），持锁领取优先级最高的 todo，置为 doing。"],
+  ["w", "d", "take_pending()", "取出 read_msg_id 之后的用户消息并推进指针；首轮通常为空。"],
+  ["w", "g", "agent.run(prompt, ws, None)", "build_prompt 用 prompt_template 生成首条 prompt；session_id 为空表示新会话。"],
+  ["g", "x", "spawn -p --output-format stream-json", "stream_cmd 启动子进程并开始超时计时（默认 1800s）。"],
+  ["x", "g", "system{session_id}", "CLI 首先回报会话 ID。"],
+  ["g", "d", "on_event('session') → session_id", "经 Worker 回调立即落库，即使后续失败也可在同一会话续跑。"],
+  ["x", "g", "tool_call / assistant / thinking …", "逐行 JSON 事件：工具调用、过程说明、思考片段。"],
+  ["g", "d", "messages: progress / agent", "进度写入 messages 表，最新一条也写到 tasks.progress 显示在卡片上。"],
+  ["u", "a", "GET /messages?after=N（2s 轮询）", "前端增量拉取新消息，实时展示执行过程。"],
+  ["x", "g", "result", "CLI 结束，返回最终结果；最后一段 assistant 文本作为回复。"],
+  ["g", "w", "reply（含 [NEED_INPUT]）", "回复中带问题标记。"],
+  ["w", "d", "finish_run → waiting", "去掉标记、记录耗时，任务进入 waiting 等待用户回答。"],
+  ["u", "a", "POST /messages {content, run:true}", "用户回答问题。"],
+  ["a", "d", "post_user_message → todo", "任务不在 doing，持锁置回 todo 重新排队。"],
+  ["w", "g", "agent.run(followup, ws, session_id)", "下一轮只发送新用户消息（followup_template），并通过 --resume 在同一会话继续。"],
+  ["g", "w", "reply", "本轮回复不含标记。"],
+  ["w", "d", "finish_run → done", "任务完成；若执行期间又收到新消息，则自动改为 todo 再跑一轮。"],
+];
+(function drawSeq() {
+  const svg = document.getElementById("seqSvg");
+  const defs = el("defs", {}, svg);
+  const lx = i => 90 + i * 164, top = 50, rowH = 36;
+  const idx = Object.fromEntries(LANES.map((l, i) => [l.id, i]));
+  LANES.forEach((l, i) => {
+    el("rect", { x: lx(i) - 68, y: 6, width: 136, height: 30, rx: 8, fill: l.c + "22", stroke: l.c }, svg);
+    el("text", { x: lx(i), y: 26, "text-anchor": "middle", fill: "#fff", "font-size": 13, "font-weight": 600 }, svg, l.name);
+    el("line", { x1: lx(i), y1: 36, x2: lx(i), y2: top + STEPS.length * rowH + 10, stroke: "#2f3b54", "stroke-dasharray": "4 4" }, svg);
+    const m = el("marker", { id: "sq" + i, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" }, defs);
+    el("path", { d: "M0,0 L10,5 L0,10 z", fill: l.c }, m);
+  });
+  const msgs = STEPS.map(([f, t, label], k) => {
+    const y = top + k * rowH + 20, x1 = lx(idx[f]), x2 = lx(idx[t]);
+    const c = LANES[idx[f]].c;
+    const g = el("g", { class: "msg" }, svg);
+    el("text", { x: 8, y: y + 4, class: "seq-step" }, g, k + 1);
+    el("line", { x1, y1: y, x2: x2 + (x2 > x1 ? -4 : 4), y2: y, stroke: c, "marker-end": `url(#sq${idx[f]})` }, g);
+    el("text", { x: (x1 + x2) / 2, y: y - 6, "text-anchor": "middle", fill: "#e4e9f2" }, g, label);
+    return g;
+  });
+  let cur = -1, timer = null;
+  const txt = document.getElementById("seqText"), cnt = document.getElementById("seqCount"), play = document.getElementById("seqPlay");
+  function render() {
+    msgs.forEach((g, k) => { g.classList.toggle("show", k < cur); g.classList.toggle("now", k === cur); });
+    cnt.textContent = `${cur + 1} / ${STEPS.length}`;
+    txt.innerHTML = cur < 0 ? `<span style="color:var(--muted)">点击「下一步」或「自动播放」开始。</span>`
+      : `<b style="color:${LANES[idx[STEPS[cur][0]]].c}">第 ${cur + 1} 步：${STEPS[cur][2]}</b><br>${STEPS[cur][3]}`;
+  }
+  const stop = () => { clearInterval(timer); timer = null; play.textContent = "▶ 自动播放"; };
+  document.getElementById("seqNext").onclick = () => { if (cur < STEPS.length - 1) cur++; render(); };
+  document.getElementById("seqPrev").onclick = () => { if (cur > -1) cur--; render(); };
+  document.getElementById("seqReset").onclick = () => { stop(); cur = -1; render(); };
+  play.onclick = () => {
+    if (timer) return stop();
+    if (cur >= STEPS.length - 1) cur = -1;
+    play.textContent = "⏸ 暂停";
+    timer = setInterval(() => { cur++; render(); if (cur >= STEPS.length - 1) stop(); }, 1400);
+  };
+  render();
+})();
+
+/* ================= ④ 事件流 ================= */
+const EV = [
+  { src: "system {session_id}", kind: "session", sink: "tasks.session_id", note: "尽早回报，失败后也能 --resume 继续。" },
+  { src: "thinking (delta)", kind: "status", sink: "tasks.progress", note: "累积思考文本，最多每秒更新一次实时状态「思考中：…」，不入消息历史。" },
+  { src: "assistant", kind: "say", sink: "messages(role=agent)", note: "先缓存；若后面还有动作（工具调用/思考）则作为过程说明发出，否则作为最终回复。" },
+  { src: "tool_call (started)", kind: "progress", sink: "messages(role=progress)", note: "经 _describe_tool 转成「执行命令 npm test」「读取 path」等中文描述；updateTodos 渲染为 ✓ → ○ 清单。" },
+  { src: "result", kind: "return", sink: "messages(agent) + finish_run", note: "is_error 则抛 AgentError → failed；否则返回最后一段 assistant 文本作为 reply。" },
+];
+(function drawEv() {
+  const svg = document.getElementById("evSvg");
+  const defs = el("defs", {}, svg);
+  const m = el("marker", { id: "ea", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" }, defs);
+  el("path", { d: "M0,0 L10,5 L0,10 z", fill: "#7d8aa5" }, m);
+  const cols = [[30, "stream-json 事件", "#9aa5b8"], [390, "on_event(kind)", "#ffb454"], [700, "Worker 落库", "#ff7a90"]];
+  cols.forEach(([x, t, c]) => el("text", { x: x + 130, y: 28, "text-anchor": "middle", fill: c, "font-size": 13, "font-weight": 700 }, svg, t));
+  const rows = EV.map((e, i) => {
+    const y = 50 + i * 82, g = el("g", { class: "ev-row" }, svg);
+    const box = (x, w, txt, c) => { const r = el("rect", { x, y, width: w, height: 52, rx: 9, fill: c + "1c", stroke: c, "stroke-width": 1.5 }, g); el("text", { x: x + w / 2, y: y + 31, "text-anchor": "middle", fill: "#fff", "font-size": 13, "font-family": "Menlo,monospace" }, g, txt); return r; };
+    const r1 = box(30, 260, e.src, "#9aa5b8"), r2 = box(390, 260, e.kind === "return" ? "return reply" : `"${e.kind}"`, "#ffb454"), r3 = box(700, 270, e.sink, "#ff7a90");
+    const l1 = el("path", { d: `M290,${y + 26} L388,${y + 26}`, stroke: "#55637e", "stroke-width": 1.8, "marker-end": "url(#ea)", fill: "none" }, g);
+    const l2 = el("path", { d: `M650,${y + 26} L698,${y + 26}`, stroke: "#55637e", "stroke-width": 1.8, "marker-end": "url(#ea)", fill: "none" }, g);
+    g.onclick = () => pick(i);
+    return { g, parts: [r1, r2, r3], lines: [l1, l2] };
+  });
+  function pick(i) {
+    rows.forEach((r, k) => {
+      r.g.style.opacity = k === i ? 1 : .35;
+      r.lines.forEach(l => { l.setAttribute("stroke", k === i ? "#5b9cff" : "#55637e"); l.setAttribute("stroke-dasharray", k === i ? "6 4" : ""); l.style.animation = k === i ? "flow .6s linear infinite" : ""; });
+      r.parts.forEach(p => p.setAttribute("stroke-width", k === i ? 3 : 1.5));
+    });
+    const e = EV[i];
+    document.getElementById("evSide").innerHTML = `<h3>${e.src}</h3><p><code>${e.src}</code> → <code>${e.kind}</code> → <code>${e.sink}</code></p><p>${e.note}</p>
+      <b>相关代码</b><ul><li><code>app/agents/cursor.py · on_line()</code></li><li><code>app/worker.py · _run().on_event()</code></li></ul>
+      <p style="color:var(--muted);font-size:12px">新增其它 Agent 底层只需实现同样的事件约定，Worker 与前端无需改动。</p>`;
+  }
+  pick(3);
+})();
+
+/* ================= ⑤ ER ================= */
+(function drawEr() {
+  const svg = document.getElementById("erSvg");
+  const tables = [
+    { name: "tasks", x: 80, y: 30, c: "#4fb3ff", cols: [
+      ["id", "INTEGER PK", "自增主键"], ["title", "TEXT", "只取首行，超过 title_max_len 截断"], ["description", "TEXT", "目标/背景/要求，可含 ![name](path) 文件引用"],
+      ["workspace", "TEXT", "Agent 工作目录"], ["source", "TEXT", "web / api / schedule / 任意"], ["priority", "INTEGER", "越大越先执行（0 低 ~ 3 紧急）"],
+      ["tags", "TEXT(JSON)", "字符串数组，JSON 编码存储"], ["status", "TEXT", "todo / doing / waiting / done / failed"], ["result", "TEXT", "最终回复或错误信息"],
+      ["progress", "TEXT", "最近一条进度，执行中显示在卡片上"], ["session_id", "TEXT", "Agent 会话 ID，后续轮次 --resume"],
+      ["read_msg_id", "INTEGER", "已交给 Agent 的最后一条用户消息 ID；失败时回退"], ["created_at", "REAL", "时间戳"], ["updated_at", "REAL", "时间戳"]] },
+    { name: "messages", x: 600, y: 120, c: "#ff7a90", cols: [
+      ["id", "INTEGER PK", "自增主键，前端用 after=id 增量拉取"], ["task_id", "INTEGER FK", "所属任务；删除任务时级联删除（代码中手动）"],
+      ["role", "TEXT", "user 用户 / agent 回复 / system 开始·完成·失败及耗时 / progress 工具调用"], ["content", "TEXT", "消息内容"], ["created_at", "REAL", "时间戳"]] },
+  ];
+  const W = 340, H = 30, pos = {};
+  tables.forEach(t => {
+    el("rect", { x: t.x, y: t.y, width: W, height: H + 6 + t.cols.length * H, rx: 10, fill: "#171e2e", stroke: t.c, "stroke-width": 1.6 }, svg);
+    el("rect", { x: t.x, y: t.y, width: W, height: H + 6, rx: 10, fill: t.c + "33" }, svg);
+    el("text", { x: t.x + 14, y: t.y + 24, fill: "#fff", "font-size": 15, "font-weight": 700 }, svg, t.name);
+    t.cols.forEach(([n, ty, d], i) => {
+      const y = t.y + H + 6 + i * H, g = el("g", { class: "er-col" }, svg);
+      el("rect", { x: t.x + 1, y, width: W - 2, height: H, fill: "transparent" }, g);
+      el("text", { x: t.x + 14, y: y + 20, fill: n === "id" ? "#ffd479" : "#e4e9f2", "font-size": 13, "font-family": "Menlo,monospace" }, g, n);
+      el("text", { x: t.x + W - 14, y: y + 20, fill: "#8b97ad", "font-size": 12, "text-anchor": "end", "font-family": "Menlo,monospace" }, g, ty);
+      g.onmousemove = e => showTip(e, `<b>${t.name}.${n}</b><br>${d}`); g.onmouseleave = hideTip;
+      pos[t.name + "." + n] = [t.x, y + H / 2];
+    });
+  });
+  const [ax, ay] = pos["tasks.id"], [bx, by] = pos["messages.task_id"];
+  el("path", { d: `M${ax + W},${ay} C${ax + W + 90},${ay} ${bx - 90},${by} ${bx},${by}`, fill: "none", stroke: "#5b9cff", "stroke-width": 2, "stroke-dasharray": "6 4", style: "animation: flow .8s linear infinite" }, svg);
+  el("text", { x: ax + W + 10, y: ay - 8, fill: "#5b9cff", "font-size": 13 }, svg, "1");
+  el("text", { x: bx - 22, y: by - 8, fill: "#5b9cff", "font-size": 13 }, svg, "N");
+  el("text", { x: 600, y: 360, fill: "#8b97ad", "font-size": 12 }, svg, "索引 idx_messages_task (task_id, id)");
+  el("text", { x: 600, y: 390, fill: "#8b97ad", "font-size": 12 }, svg, "并发控制：db._lock 串行化 claim_next /");
+  el("text", { x: 600, y: 408, fill: "#8b97ad", "font-size": 12 }, svg, "post_user_message / finish_run");
+  el("text", { x: 600, y: 438, fill: "#8b97ad", "font-size": 12 }, svg, "启动时：残留 doing → failed（interrupted）");
+})();
+
+/* ================= ⑥ Prompt ================= */
+(function promptSim() {
+  const S = document.getElementById("pSession"), N = document.getElementById("pNum"), out = document.getElementById("pOut");
+  const samples = ["登录页用 Vue 还是 React？用 React。", "顺便把单测补上。", "日志路径是 ~/logs/err.log"];
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  function render() {
+    const n = +N.value; document.getElementById("pNumV").textContent = n;
+    const parts = [];
+    if (!S.checked) parts.push(`<span class="hl1">${esc("# 修复登录 bug\n\n目标：修复登录 500。\n日志见 ~/logs/err.log，不要改接口。\n\n---\n执行时，每开始一个步骤前先用一句话说明你要做什么…\n…并在回复末尾单独一行写 [NEED_INPUT]。")}</span>`);
+    if (n) parts.push(`<span class="hl2">${esc("用户在任务会话中发来新消息：\n\n" + samples.slice(0, n).join("\n\n---\n\n"))}</span>`);
+    if (!parts.length) parts.push(`<span class="hl3">请根据当前会话的上下文，重新执行或继续完成任务。</span>`);
+    const flags = S.checked ? "--resume <session_id> " : "";
+    out.innerHTML = `<span style="color:#8b97ad">$ cursor-agent -p --output-format stream-json --trust --workspace ~/workspace ${flags}--force \\\n  "</span>` + parts.join("\n\n") + `<span style="color:#8b97ad">"</span>`;
+  }
+  S.onchange = render; N.oninput = render; render();
+})();
+</script>
+</body>
+</html>

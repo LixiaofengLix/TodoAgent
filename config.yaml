@@ -1,0 +1,117 @@
+server:
+  host: 127.0.0.1
+  port: 8765
+  # 非空时，所有 /api 请求需带 Header: Authorization: Bearer <token>
+  api_token: ""
+  # 生成 HTML 预览链接时使用的地址，留空为 http://host:port
+  public_url: ""
+
+logging:
+  # 应用日志和 HTTP 服务日志共用。DEBUG / INFO / WARNING / ERROR / CRITICAL
+  level: INFO
+
+# SQLite 文件路径（相对于启动目录）
+database: data/tasks.db
+
+worker:
+  enabled: true
+  # 同时执行的任务数
+  concurrency: 1
+  # 无任务时轮询间隔（秒）
+  poll_interval: 3
+  # Agent 回复中包含此标记时，任务进入"待回复"，等用户回答后继续
+  question_marker: "[NEED_INPUT]"
+  # 新会话的首条 prompt，可用字段：{id} {title} {description} {workspace} {priority} {tags} {source} {question_marker}
+  prompt_template: |
+    # {title}
+
+    {description}
+  # 强约束：附加在每一轮 prompt 末尾（首轮、追加消息、重新执行都会带上），可用 {question_marker}
+  rules: |
+    【必须遵守的规则】
+    1. 所有回复、过程说明、提问和总结必须使用简体中文（代码、命令、文件名除外）。
+    2. 每开始一个步骤前，先用一句话说明你要做什么，方便用户了解进度。
+    3. 如果任务需要产出 HTML，必须把 HTML 文件保存在当前工作目录内，并在最终回复中写出该文件相对工作目录的路径（如 report.html）。
+    4. 如需用户回答问题或做决定才能继续，请把问题写在回复里，并在回复末尾单独一行写 {question_marker}。
+  # 已有会话中，把用户新消息发给 Agent 的模板；多条消息以分隔线拼接为 {messages}
+  followup_template: |
+    用户在任务会话中发来新消息：
+
+    {messages}
+  # 已有会话、没有新消息时"重新执行"发送的内容
+  continue_prompt: 请根据当前会话的上下文，重新执行或继续完成任务。
+
+task:
+  # 描述中粘贴/拖入的文件保存目录，文件绝对路径会写进描述
+  files_dir: data/files
+  # 未指定工作目录时自动创建的目录（相对启动目录），{id} 为任务 ID
+  workspace_template: tasks/task_{id}
+  # 标题只取首行，超过此长度会截断
+  title_max_len: 50
+  # 优先级：数值越大越先执行
+  priorities:
+    0: 低
+    1: 中
+    2: 高
+    3: 紧急
+  default_priority: 1
+
+skills:
+  # 工程中的 skill 目录（相对启动目录），每个子目录是一个 skill（含 SKILL.md）；留空则不安装
+  dir: skills
+  # 安装到工作目录下的位置。.agents/skills 是 Agent Skills 标准目录，Cursor 和 Codex 都会读取
+  target: .agents/skills
+
+notify:
+  # 任务进入这些状态时提醒：verify 待验收 / waiting 待回复 / failed 执行失败（手动中止不提醒）
+  on: [verify, waiting, failed]
+  # macOS 系统通知（服务所在机器）
+  system: true
+  feishu:
+    # 飞书群自定义机器人的 webhook 地址，留空则不发
+    webhook: ""
+    # 机器人开启了"签名校验"时填写，否则留空
+    secret: ""
+
+review:
+  # 创建任务时的"AI 审核"：以只读问答方式快速判断可行性并完善描述
+  # 超时（秒），审核只求快速判断
+  timeout: 90
+  # 审核用的模型，留空用 agent 配置的模型；建议用快的模型（`cursor-agent --list-models` 查看）
+  model: gemini-3.7-flash-high
+  # 可用字段：{title} {description} {workspace} {skills}；JSON 示例中的花括号需写成 {{ }}
+  prompt_template: |
+    你是任务审核员。用户准备把下面的任务交给一个编程 Agent，在工作目录中自主执行。
+    请快速判断，不要使用任何工具，不要读取文件，直接回答。
+
+    【任务标题】{title}
+    【工作目录】{workspace}
+    【任务描述】
+    {description}
+
+    【Agent 可用的 skills】
+    {skills}
+
+    请判断：目标是否明确、信息是否足够、Agent 能否独立完成（结合可用 skills）、有没有风险。
+    然后在不改变原意的前提下完善任务描述：整理成目标、背景、要求、预期结果的结构；缺失的关键信息用【待补充：…】标出，不要编造；保留原描述中的图片、文件和链接。
+
+    只输出一个 JSON 对象，不要输出其他内容：
+    {{"verdict": "可行 / 需补充 / 不可行 三选一", "summary": "一句话结论", "issues": ["问题或风险，没有则为空数组"], "description": "完善后的完整任务描述（Markdown）"}}
+
+agent:
+  # 使用哪个 Agent 底层，对应下方同名配置段；也可用 --agent 启动参数覆盖
+  type: cursor
+
+  cursor:
+    bin: cursor-agent
+    # 留空则用 CLI 默认模型，可用 `cursor-agent --list-models` 查看
+    model: ""
+    # 允许 Agent 直接执行命令/改文件，不再询问
+    force: true
+    # 单个任务超时（秒）
+    timeout: 1800
+    # 追加给 CLI 的其他参数
+    extra_args: []
+    # 传给 CLI 进程的环境变量，空值忽略；未 `cursor-agent login` 时可在此填 CURSOR_API_KEY
+    env:
+      CURSOR_API_KEY: ""
