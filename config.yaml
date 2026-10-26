@@ -16,9 +16,9 @@ database: data/tasks.db
 worker:
   enabled: true
   # 同时执行的任务数
-  concurrency: 1
+  concurrency: 5
   # 无任务时轮询间隔（秒）
-  poll_interval: 3
+  poll_interval: 10
   # Agent 回复中包含此标记时，任务进入"待回复"，等用户回答后继续
   question_marker: "[NEED_INPUT]"
   # 新会话的首条 prompt，可用字段：{id} {title} {description} {workspace} {priority} {tags} {source} {question_marker}
