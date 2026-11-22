@@ -1,9 +1,11 @@
 from .base import Agent, AgentError, AgentStopped
+from .claude import ClaudeAgent
 from .cursor import CursorAgent
 
 # 新增底层：实现 Agent.run 和 Agent.ask，然后在这里注册，并在 config.yaml 的 agent 下加同名配置段
 AGENTS = {
     "cursor": CursorAgent,
+    "claude": ClaudeAgent,
 }
 
 

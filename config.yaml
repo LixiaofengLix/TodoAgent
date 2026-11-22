@@ -59,8 +59,9 @@ task:
 skills:
   # 工程中的 skill 目录（相对启动目录），每个子目录是一个 skill（含 SKILL.md）；留空则不安装
   dir: skills
-  # 安装到工作目录下的位置。.agents/skills 是 Agent Skills 标准目录，Cursor 和 Codex 都会读取
-  target: .agents/skills
+  # 安装到工作目录下的位置，可写多个。.agents/skills 是 Agent Skills 标准目录，Cursor 和 Codex 都会读取；
+  # .claude/skills 供 Claude Code 读取
+  targets: [.agents/skills, .claude/skills]
 
 notify:
   # 任务进入这些状态时提醒：verify 待验收 / waiting 待回复 / failed 执行失败（手动中止不提醒）
@@ -77,8 +78,9 @@ review:
   # 创建任务时的"AI 审核"：以只读问答方式快速判断可行性并完善描述
   # 超时（秒），审核只求快速判断
   timeout: 90
-  # 审核用的模型，留空用 agent 配置的模型；建议用快的模型（`cursor-agent --list-models` 查看）
-  model: gemini-3.7-flash-high
+  # 审核用的模型，留空用当前 Agent 配置段的 review_model（再缺省用 agent 的 model）；
+  # 建议用快的模型，如 Cursor 的 gemini-3.7-flash-high（`cursor-agent --list-models` 查看）、Claude 的 haiku
+  model: ""
   # 可用字段：{title} {description} {workspace} {skills}；JSON 示例中的花括号需写成 {{ }}
   prompt_template: |
     你是任务审核员。用户准备把下面的任务交给一个编程 Agent，在工作目录中自主执行。
@@ -106,6 +108,8 @@ agent:
     bin: cursor-agent
     # 留空则用 CLI 默认模型，可用 `cursor-agent --list-models` 查看
     model: ""
+    # AI 审核用的快模型，留空用上面的 model
+    review_model: gemini-3.7-flash-high
     # 允许 Agent 直接执行命令/改文件，不再询问
     force: true
     # 单个任务超时（秒）
@@ -115,3 +119,25 @@ agent:
     # 传给 CLI 进程的环境变量，空值忽略；未 `cursor-agent login` 时可在此填 CURSOR_API_KEY
     env:
       CURSOR_API_KEY: ""
+
+  # Claude Code（需先 `claude` 登录，或在 env 中填 ANTHROPIC_API_KEY）
+  claude:
+    bin: claude
+    # 留空则用 CLI 默认模型；可填别名（sonnet / opus / haiku）或完整模型名
+    model: ""
+    # AI 审核用的快模型，留空用上面的 model
+    review_model: haiku
+    # 权限模式：bypassPermissions 全自动（等同 cursor 的 force）；
+    # acceptEdits 只自动同意改文件；其他可选 auto / manual / dontAsk / plan；
+    # 留空用 CLI 默认（非交互模式下会拒绝需要确认的操作）。
+    # 若企业策略禁用了 bypass（permissions.disableBypassPermissionsMode），改用 acceptEdits 或 auto
+    permission_mode: bypassPermissions
+    # 单个任务超时（秒）
+    timeout: 1800
+    # 忽略用户级 / 项目级的 MCP 配置，避免全局 MCP 拖慢任务；需要 MCP 时设为 false
+    strict_mcp: true
+    # 追加给 CLI 的其他参数
+    extra_args: []
+    # 传给 CLI 进程的环境变量，空值忽略
+    env:
+      ANTHROPIC_API_KEY: ""

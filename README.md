@@ -9,11 +9,17 @@ uv sync
 uv run main.py                      # 使用 config.yaml
 uv run main.py -c my.yaml           # 指定配置文件
 uv run main.py --agent cursor       # 覆盖 agent.type
+uv run main.py --agent claude       # 使用 Claude Code 底层
 ```
 
 打开 http://127.0.0.1:8765 ，API 文档见 http://127.0.0.1:8765/docs 。
 
-Cursor 底层需要先 `cursor-agent login`，或在 `config.yaml` 的 `agent.cursor.env.CURSOR_API_KEY` 填 key。
+Agent 底层见 `config.yaml` 的 `agent` 段，当前支持 Cursor 和 Claude Code：
+
+- Cursor：需要先 `cursor-agent login`，或在 `agent.cursor.env.CURSOR_API_KEY` 填 key。
+- Claude Code：需要先 `claude` 登录，或在 `agent.claude.env.ANTHROPIC_API_KEY` 填 key；
+  默认 `permission_mode: bypassPermissions` 全自动执行（等同 Cursor 的 `force`），可按需改为 `acceptEdits` 等；
+  默认 `strict_mcp: true` 忽略用户级 / 项目级 MCP 配置，避免全局 MCP 拖慢任务，需要 MCP 时设为 `false`。
 
 支持 macOS 和 Windows。与系统相关的操作（目录选择框、系统通知、中止时结束进程树）集中在 `app/osutil.py`；
 Windows 下这些操作通过系统自带的 Windows PowerShell 5.1（`powershell.exe`）和 `taskkill` 实现。
@@ -59,14 +65,16 @@ worker 只领取普通任务（`repeat` 为空）中的 `todo`，按优先级从
 ## Skills
 
 工程的 `skills/` 目录存放给 Agent 用的 skill，每个子目录一个（含 `SKILL.md`，格式见 [Agent Skills](https://cursor.com/docs/skills)）。
-创建任务时会把它们复制到工作目录的 `.agents/skills/` 下，每轮执行前再同步一次（同名文件覆盖，所以修改 skill 后下次执行即生效）。
-目录和安装位置见 `config.yaml` 的 `skills` 段；`.agents/skills` 是标准目录，Cursor 和 Codex 都会读取。
+创建任务时会把它们复制到工作目录下的各个目标目录，每轮执行前再同步一次（同名文件覆盖，所以修改 skill 后下次执行即生效）。
+目录和安装位置见 `config.yaml` 的 `skills` 段，默认同时安装到 `.agents/skills`（Cursor 和 Codex 读取）和 `.claude/skills`（Claude Code 读取）。
 
 ## AI 审核
 
 创建/编辑任务时点"AI 审核"，会把标题、描述、工作目录和可用 skills（取自各 `SKILL.md` 的 name 和 description）交给 Agent 快速审核：
-以只读问答方式运行（Cursor 为 `--mode ask`，在临时空目录中，不建会话），返回结论（可行 / 需补充 / 不可行）、问题列表和完善后的描述。
-完善后的描述可以一键采用，也可以撤回恢复原文。超时、模型和提示词见 `config.yaml` 的 `review` 段。
+以只读问答方式运行（Cursor 为 `--mode ask`，Claude Code 为 `--tools ""` 禁用所有工具；都在临时空目录中，不建会话），
+返回结论（可行 / 需补充 / 不可行）、问题列表和完善后的描述。
+完善后的描述可以一键采用，也可以撤回恢复原文。超时、模型和提示词见 `config.yaml` 的 `review` 段；
+模型留空时用各 Agent 配置段的 `review_model`（Cursor 默认 `gemini-3.7-flash-high`，Claude 默认 `haiku`）。
 
 ## 任务会话
 
@@ -132,7 +140,8 @@ curl -X POST localhost:8765/api/tasks -H 'Content-Type: application/json' -d '{
 1. 在 `app/agents/` 新建类继承 `Agent`，实现 `run(prompt, workspace, session_id, on_event, stop) -> str`：
    `session_id` 为空时新建会话，否则继续；通过 `on_event("session", id)` 回报会话 ID，`on_event("progress", 文本)` 回报进度；
    `stop` 被 set 时应尽快结束并抛出 `AgentStopped`。
-   可用 `self.stream_cmd(cmd, workspace, on_line, stop=stop)` 逐行读取 CLI 输出，它已处理中止和超时（杀掉整个进程组）。
+   可用 `self.stream_cmd(cmd, workspace, on_line, stop=stop)` 逐行读取 CLI 输出，它已处理中止和超时（杀掉整个进程组）；
+   需要从 stdin 传 prompt 时加 `stdin_text=prompt`（Claude 底层即如此，避免命令行长度限制）。
    AI 审核还需实现 `ask(prompt, workspace, timeout, model) -> str`。
 2. 在 `app/agents/__init__.py` 的 `AGENTS` 中注册名字。
 3. 在 `config.yaml` 的 `agent` 下添加同名配置段，`agent.type` 改为该名字。

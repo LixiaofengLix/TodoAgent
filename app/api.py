@@ -233,7 +233,8 @@ def create_app(cfg: dict, agent: Agent) -> FastAPI:
         )
         with tempfile.TemporaryDirectory() as tmp:
             try:
-                reply = agent.ask(prompt, tmp, rcfg.get("timeout", 90), rcfg.get("model", ""))
+                model = rcfg.get("model") or agent.review_model()
+                reply = agent.ask(prompt, tmp, rcfg.get("timeout", 90), model)
             except AgentError as e:
                 raise HTTPException(502, f"审核失败：{str(e)[:300]}")
         start, end = reply.find("{"), reply.rfind("}")
