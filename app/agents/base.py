@@ -14,6 +14,15 @@ from .. import osutil
 EventCallback = Callable[[str, str], None]
 
 
+def _feed(p: subprocess.Popen, text: str) -> None:
+    """把 prompt 写入子进程 stdin 后关闭；进程提前退出时静默忽略。"""
+    try:
+        p.stdin.write(text)
+        p.stdin.close()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+
+
 class AgentError(Exception):
     pass
 
@@ -38,9 +47,14 @@ class Agent:
         """一次性只读问答（不建会话、不改文件），用于快速审核等。返回回复文本，失败抛 AgentError。"""
         raise NotImplementedError
 
+    def review_model(self) -> str:
+        """AI 审核使用的模型；留空则用该底层配置的默认模型。"""
+        return self.cfg.get("review_model", "")
+
     def stream_cmd(self, cmd: list, workspace: str, on_line: Callable[[str], None], timeout: Optional[int] = None,
-                   stop: Optional[threading.Event] = None) -> None:
-        """运行命令，逐行回调 stdout；超时、被 stop 中止或非 0 退出时抛 AgentError。"""
+                   stop: Optional[threading.Event] = None, stdin_text: Optional[str] = None) -> None:
+        """运行命令，逐行回调 stdout；stdin_text 不为空时写入子进程 stdin 后关闭。
+        超时、被 stop 中止或非 0 退出时抛 AgentError。"""
         env = {**os.environ, **{k: str(v) for k, v in (self.cfg.get("env") or {}).items() if v}}
         timeout = timeout or self.cfg.get("timeout", 1800)
         timed_out = threading.Event()
@@ -48,7 +62,11 @@ class Agent:
         with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err:
             # 独立进程组：结束时连同 Agent 启动的子进程（命令、脚本等）一起杀掉
             p = osutil.popen_tree(cmd, cwd=workspace, env=env, stdout=subprocess.PIPE, stderr=err,
+                                  stdin=subprocess.PIPE if stdin_text is not None else None,
                                   encoding="utf-8", errors="replace")
+            if stdin_text is not None:
+                # 单独线程写入，避免输入较大时与 stdout 读取互相等待
+                threading.Thread(target=_feed, args=(p, stdin_text), daemon=True).start()
 
             def kill() -> None:
                 osutil.kill_tree(p)

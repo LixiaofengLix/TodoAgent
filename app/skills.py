@@ -5,13 +5,17 @@ from pathlib import Path
 import yaml
 
 _src = None
-_target = ""
+_targets = []
 
 
 def init(cfg: dict) -> None:
-    global _src, _target
+    global _src, _targets
     _src = Path(cfg["dir"]).resolve() if cfg.get("dir") else None
-    _target = cfg.get("target") or ".agents/skills"
+    # targets 可写多个目录；兼容旧配置的单个 target
+    targets = cfg.get("targets") or cfg.get("target") or ".agents/skills"
+    if isinstance(targets, str):
+        targets = [targets]
+    _targets = list(dict.fromkeys(targets))
 
 
 def describe() -> list:
@@ -32,13 +36,14 @@ def describe() -> list:
 
 
 def install(workspace: str) -> list:
-    """把 skills 目录下的每个子目录复制到 <workspace>/<target>/ 下（同名覆盖，保持最新），返回安装的 skill 名。"""
+    """把 skills 目录下的每个子目录复制到 <workspace>/<targets>/ 下（同名覆盖，保持最新），返回安装的 skill 名。"""
     if not _src or not _src.is_dir():
         return []
-    dst = Path(workspace).expanduser().resolve() / _target
+    root = Path(workspace).expanduser().resolve()
     names = []
     for d in sorted(_src.iterdir()):
         if d.is_dir() and not d.name.startswith("."):
-            shutil.copytree(d, dst / d.name, dirs_exist_ok=True)
+            for target in _targets:
+                shutil.copytree(d, root / target / d.name, dirs_exist_ok=True)
             names.append(d.name)
     return names
